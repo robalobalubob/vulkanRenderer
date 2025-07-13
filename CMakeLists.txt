@@ -1,0 +1,31 @@
+cmake_minimum_required(VERSION 3.16)
+project(vulkan-engine LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+
+find_package(Vulkan REQUIRED)
+find_package(glfw3 3.3 REQUIRED)
+find_package(glm REQUIRED)
+
+include_directories(include)
+
+# Pull in VMA
+add_subdirectory(third_party/vma)
+
+add_executable(test_scene 
+src/main.cpp
+src/HelloTriangleApp.cpp
+src/core/VulkanInstance.cpp
+src/core/VulkanDevice.cpp
+src/core/VulkanSwapChain.cpp
+src/rendering/RenderPass.cpp
+src/rendering/Pipeline.cpp
+src/rendering/CommandPool.cpp
+)
+
+target_link_libraries(test_scene
+    PRIVATE
+        Vulkan::Vulkan        # your Vulkan loader
+        glfw                  # GLFW windowing
+        glm::glm              # GLM header-only (imported target)
+        VulkanMemoryAllocator # the VMA library target
+)

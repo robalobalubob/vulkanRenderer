@@ -1,0 +1,144 @@
+# Build directories
+build/
+out/
+bin/
+lib/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+# Ninja build files
+build.ninja
+.ninja_deps
+.ninja_log
+rules.ninja
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+test_scene
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Compiled shaders (SPIR-V bytecode)
+*.spv
+
+# IDE files
+.vscode/
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Qt Creator
+CMakeLists.txt.user
+CMakeLists.txt.user.*
+
+# CLion
+.idea/
+
+# Code::Blocks
+*.cbp
+*.layout
+*.depend
+
+# CodeLite
+*.project
+*.workspace
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Linux
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+
+# Package manager files
+conan.lock
+conanbuildinfo.*
+conaninfo.txt
+
+# Vulkan validation layers
+*.json
+
+# Third party (keep source but ignore builds)
+third_party/*/build/
+third_party/*/bin/
+third_party/*/*.exe
+
+# Keep important shader source files but ignore compiled versions
+!shaders/*.glsl
+!shaders/*.vert
+!shaders/*.frag
+!shaders/*.comp
+!shaders/*.geom
+!shaders/*.tesc
+!shaders/*.tese
+
+# Clang tools and cache
+.cache/
+.clangd/
+.clang-cache/
+compile_flags.txt
+.ccls-cache/
+.ccls
