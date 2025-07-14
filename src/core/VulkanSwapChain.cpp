@@ -11,7 +11,7 @@ namespace vkeng {
         createImageViews();
     }
 
-    VulkanSwapChain::~VulkanSwapChain() {
+    VulkanSwapChain::~VulkanSwapChain() noexcept {
         for (auto imageView : imageViews_) {
             vkDestroyImageView(device_, imageView, nullptr);
         }

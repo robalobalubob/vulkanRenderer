@@ -45,7 +45,7 @@ namespace vkeng {
         }
     }
 
-    RenderPass::~RenderPass() {
+    RenderPass::~RenderPass() noexcept {
         if (renderPass_ != VK_NULL_HANDLE) {
             vkDestroyRenderPass(device_, renderPass_, nullptr);
         }

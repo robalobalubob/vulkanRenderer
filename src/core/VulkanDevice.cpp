@@ -8,7 +8,7 @@ namespace vkeng {
         createLogicalDevice();
     }
 
-    VulkanDevice::~VulkanDevice() {
+    VulkanDevice::~VulkanDevice() noexcept {
         if (device_ != VK_NULL_HANDLE) {
             vkDestroyDevice(device_, nullptr);
         }

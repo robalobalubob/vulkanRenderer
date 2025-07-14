@@ -14,7 +14,7 @@ namespace vkeng {
         }
     }
 
-    CommandPool::~CommandPool() {
+    CommandPool::~CommandPool() noexcept {
         if (commandPool_ != VK_NULL_HANDLE) {
             vkDestroyCommandPool(device_, commandPool_, nullptr);
         }
@@ -39,7 +39,7 @@ namespace vkeng {
         return commandBuffer;
     }
 
-    void CommandPool::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+    void CommandPool::endSingleTimeCommands(VkCommandBuffer commandBuffer, VkQueue queue) {
         vkEndCommandBuffer(commandBuffer);
         
         VkSubmitInfo submitInfo{};

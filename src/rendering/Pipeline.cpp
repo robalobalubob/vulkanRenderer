@@ -119,7 +119,7 @@ namespace vkeng {
         vkDestroyShaderModule(device_, vertShaderModule, nullptr);
     }
 
-    Pipeline::~Pipeline() {
+    Pipeline::~Pipeline() noexcept {
         if (pipeline_ != VK_NULL_HANDLE) {
             vkDestroyPipeline(device_, pipeline_, nullptr);
         }
@@ -128,7 +128,7 @@ namespace vkeng {
         }
     }
 
-    VkShaderModule Pipeline::createShaderModule(const std::vector<char>& code) {
+    VkShaderModule Pipeline::createShaderModule(const std::vector<char>& code) const {
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         createInfo.codeSize = code.size();
@@ -142,11 +142,11 @@ namespace vkeng {
         return shaderModule;
     }
 
-    std::vector<char> Pipeline::readFile(const std::string& filename) {
+    std::vector<char> Pipeline::readFile(const std::filesystem::path& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
         if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file: " + filename);
+            throw std::runtime_error("Failed to open file: " + filename.string());
         }
 
         size_t fileSize = (size_t) file.tellg();
