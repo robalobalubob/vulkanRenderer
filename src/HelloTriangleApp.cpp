@@ -26,7 +26,8 @@ namespace vkeng {
     void HelloTriangleApp::initWindow() {
         if (!glfwInit()) throw std::runtime_error("GLFW init failed");
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window_ = glfwCreateWindow(800, 600, "Hello Triangle", nullptr, nullptr);
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // Disable resize for now
+        window_ = glfwCreateWindow(800, 600, "Vulkan Triangle", nullptr, nullptr);
         if (!window_) {
             glfwTerminate();
             throw std::runtime_error("Failed to create GLFW window");
@@ -67,8 +68,8 @@ namespace vkeng {
             device_->getDevice(), 
             renderPass_->get(), 
             swapChain_->extent(), 
-            "shaders/vert.spv", 
-            "shaders/frag.spv"
+            "../shaders/vert.spv", 
+            "../shaders/frag.spv"
         );
 
         // 7) CommandPool
@@ -345,16 +346,11 @@ namespace vkeng {
         // Clean up the old swap chain resources
         cleanupSwapChain();
         
-        // Recreate the swap chain with new dimensions
-        VkSurfaceKHR surface;
-        // Note: We need to store the surface as a member variable for this to work properly
-        // For now, we'll need to modify the architecture slightly
-        
         // Create new swap chain
         swapChain_ = std::make_unique<VulkanSwapChain>(
             device_->getDevice(), 
             device_->getPhysicalDevice(), 
-            surface_, // This needs to be a member variable
+            surface_, 
             width, 
             height
         );

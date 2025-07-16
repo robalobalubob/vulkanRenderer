@@ -11,6 +11,9 @@ include_directories(include)
 # Pull in VMA
 add_subdirectory(third_party/vma)
 
+configure_file(${CMAKE_SOURCE_DIR}/shaders/vert.spv ${CMAKE_BINARY_DIR}/shaders/vert.spv COPYONLY)
+configure_file(${CMAKE_SOURCE_DIR}/shaders/frag.spv ${CMAKE_BINARY_DIR}/shaders/frag.spv COPYONLY)
+
 add_executable(test_scene 
 src/main.cpp
 src/HelloTriangleApp.cpp
