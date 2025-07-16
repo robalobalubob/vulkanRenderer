@@ -1,8 +1,8 @@
 #pragma once
 #include <filesystem>
 #include <vulkan/vulkan.h>
-#include <string>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 
 namespace vkeng {
     class Pipeline {
@@ -10,8 +10,8 @@ namespace vkeng {
         explicit Pipeline(VkDevice device,
             VkRenderPass renderPass,
             VkExtent2D extent,
-            const std::string& vertPath,
-            const std::string& fragPath);
+            const std::filesystem::path& vertPath,
+            const std::filesystem::path& fragPath);
         ~Pipeline() noexcept;
 
         Pipeline(const Pipeline&) = delete;
@@ -26,6 +26,10 @@ namespace vkeng {
         VkDevice device_{VK_NULL_HANDLE};
         VkPipeline pipeline_{VK_NULL_HANDLE};
         VkPipelineLayout layout_{VK_NULL_HANDLE};
+        VkRenderPass renderPass_{VK_NULL_HANDLE};
+        VkExtent2D extent_{};
+        std::filesystem::path vertPath_;
+        std::filesystem::path fragPath_;
 
         VkShaderModule createShaderModule(const std::vector<char>& code) const;
         static std::vector<char> readFile(const std::filesystem::path& filename);

@@ -161,9 +161,11 @@ namespace vkeng {
     }
 
     void HelloTriangleApp::createSyncObjects() {
-        // Size frames to match swap chain images
-        size_t imageCount = swapChain_->imageViews().size();
-        frames_.resize(imageCount);
+        // Either use a fixed number of frames in flight
+        //frames_.resize(MAX_FRAMES_IN_FLIGHT);
+        
+        // Or match swap chain images
+        frames_.resize(swapChain_->imageViews().size());
         
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -172,7 +174,7 @@ namespace vkeng {
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         
-        for (size_t i = 0; i < imageCount; i++) {
+        for (size_t i = 0; i < frames_.size(); i++) {
             if (vkCreateSemaphore(device_->getDevice(), &semaphoreInfo, nullptr, 
                                 &frames_[i].imageAvailableSemaphore) != VK_SUCCESS ||
                 vkCreateSemaphore(device_->getDevice(), &semaphoreInfo, nullptr, 
@@ -185,12 +187,17 @@ namespace vkeng {
     }
 
     void HelloTriangleApp::drawFrame() {
+        FrameData& frame = frames_[currentFrame_];
+        
+        // Wait for the previous frame using this slot to finish
+        vkWaitForFences(device_->getDevice(), 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
+        
         // Acquire an image from the swap chain
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(device_->getDevice(), 
                                             swapChain_->swapChain(),
                                             UINT64_MAX,
-                                            VK_NULL_HANDLE,  // We'll fix this in a moment
+                                            frame.imageAvailableSemaphore,
                                             VK_NULL_HANDLE,
                                             &imageIndex);
         
@@ -201,19 +208,8 @@ namespace vkeng {
             throw std::runtime_error("Failed to acquire swap chain image!");
         }
         
-        FrameData& frame = frames_[imageIndex];
-        
-        // Wait for this frame's previous use to complete
-        vkWaitForFences(device_->getDevice(), 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
+        // Only reset the fence if we're submitting work
         vkResetFences(device_->getDevice(), 1, &frame.inFlightFence);
-        
-        // Re-acquire with the correct semaphore
-        result = vkAcquireNextImageKHR(device_->getDevice(), 
-                                    swapChain_->swapChain(),
-                                    UINT64_MAX,
-                                    frame.imageAvailableSemaphore,
-                                    VK_NULL_HANDLE,
-                                    &imageIndex);
         
         // Record command buffer
         vkResetCommandBuffer(frame.commandBuffer, 0);
@@ -258,6 +254,8 @@ namespace vkeng {
         } else if (result != VK_SUCCESS) {
             throw std::runtime_error("Failed to present swap chain image!");
         }
+        
+        currentFrame_ = (currentFrame_ + 1) % frames_.size();
     }
 
     void HelloTriangleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
@@ -322,21 +320,19 @@ namespace vkeng {
     }
 
     void HelloTriangleApp::allocateCommandBuffers() {
-    size_t imageCount = swapChain_->imageViews().size();
-    
-    for (size_t i = 0; i < imageCount; i++) {
-        VkCommandBufferAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool = commandPool_->getPool();
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = 1;
-        
-        if (vkAllocateCommandBuffers(device_->getDevice(), &allocInfo, 
-                                    &frames_[i].commandBuffer) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate command buffer!");
+        for (size_t i = 0; i < frames_.size(); i++) {
+            VkCommandBufferAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocInfo.commandPool = commandPool_->getPool();
+            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocInfo.commandBufferCount = 1;
+            
+            if (vkAllocateCommandBuffers(device_->getDevice(), &allocInfo, 
+                                        &frames_[i].commandBuffer) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to allocate command buffer!");
+            }
         }
     }
-}
 
     void HelloTriangleApp::recreateSwapChain() {
         // Handle minimization - wait until window has a valid size

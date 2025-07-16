@@ -1,10 +1,11 @@
 #include "vulkan-engine/Pipeline.hpp"
 #include <stdexcept>
 #include <fstream>
+#include <vulkan/vulkan_core.h>
 
 namespace vkeng {
     Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkExtent2D extent, 
-                       const std::string& vertPath, const std::string& fragPath)
+                       const std::filesystem::path& vertPath, const std::filesystem::path& fragPath)
         : device_(device) {
         
         auto vertShaderCode = readFile(vertPath);
@@ -63,7 +64,7 @@ namespace vkeng {
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
         rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // Use counter-clockwise front face
         rasterizer.depthBiasEnable = VK_FALSE;
 
         VkPipelineMultisampleStateCreateInfo multisampling{};
