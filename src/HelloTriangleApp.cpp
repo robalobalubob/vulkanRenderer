@@ -78,11 +78,11 @@ namespace vkeng {
         // 8) Create framebuffers
         createFramebuffers();
         
-        // 9) Allocate command buffers
-        allocateCommandBuffers();
-        
-        // 10) Create synchronization objects
+        // 9) Create synchronization objects
         createSyncObjects();
+
+        // 10) Allocate command buffers
+        allocateCommandBuffers();
     }
 
     void HelloTriangleApp::mainLoop() {
