@@ -1,4 +1,5 @@
 #pragma once
+#include "vulkan-engine/VulkanSwapChain.hpp"
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <memory>
@@ -50,7 +51,11 @@ namespace vkeng {
 
         std::vector<VkFramebuffer> swapChainFramebuffers_;
 
-        static constexpr int MAX_FRAMES_IN_FLIGHT = 2; // For simplicity, using a constant here
+        // static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+
+        size_t getMaxFramesInFlight() const {
+            return swapChain_ ? swapChain_->imageViews().size() : 2; // Default to 2 if no swap chain
+        }
 
         struct FrameData {
             VkCommandBuffer commandBuffer;
