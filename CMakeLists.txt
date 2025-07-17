@@ -20,6 +20,8 @@ src/HelloTriangleApp.cpp
 src/core/VulkanInstance.cpp
 src/core/VulkanDevice.cpp
 src/core/VulkanSwapChain.cpp
+src/core/Buffer.cpp
+src/math/Transform.cpp
 src/rendering/RenderPass.cpp
 src/rendering/Pipeline.cpp
 src/rendering/CommandPool.cpp
