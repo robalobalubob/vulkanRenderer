@@ -1,4 +1,4 @@
-#include "vulkan-engine/VulkanInstance.hpp"
+#include "vulkan-engine/core/VulkanInstance.hpp"
 #include <GLFW/glfw3.h>
 #include <cstring>
 #include <stdexcept>

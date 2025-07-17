@@ -1,4 +1,4 @@
-#include "vulkan-engine/VulkanSwapChain.hpp"
+#include "vulkan-engine/core/VulkanSwapChain.hpp"
 #include <stdexcept>
 #include <algorithm>
 

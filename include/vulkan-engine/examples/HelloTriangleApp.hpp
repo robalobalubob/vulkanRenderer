@@ -1,5 +1,5 @@
 #pragma once
-#include "vulkan-engine/VulkanSwapChain.hpp"
+#include "../core/VulkanSwapChain.hpp"
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <memory>

@@ -1,4 +1,4 @@
-#include "vulkan-engine/RenderPass.hpp"
+#include "vulkan-engine/rendering/RenderPass.hpp"
 #include <stdexcept>
 
 namespace vkeng {

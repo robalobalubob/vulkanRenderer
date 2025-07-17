@@ -1,11 +1,11 @@
 #define GLFW_INCLUDE_VULKAN
-#include "vulkan-engine/HelloTriangleApp.hpp"
-#include "vulkan-engine/VulkanInstance.hpp"
-#include "vulkan-engine/VulkanDevice.hpp"
-#include "vulkan-engine/VulkanSwapChain.hpp"
-#include "vulkan-engine/RenderPass.hpp"
-#include "vulkan-engine/Pipeline.hpp"
-#include "vulkan-engine/CommandPool.hpp"
+#include "vulkan-engine/examples/HelloTriangleApp.hpp"
+#include "vulkan-engine/core/VulkanInstance.hpp"
+#include "vulkan-engine/core/VulkanDevice.hpp"
+#include "vulkan-engine/core/VulkanSwapChain.hpp"
+#include "vulkan-engine/rendering/RenderPass.hpp"
+#include "vulkan-engine/rendering/Pipeline.hpp"
+#include "vulkan-engine/rendering/CommandPool.hpp"
 #include <stdexcept>
 
 namespace vkeng {

@@ -1,4 +1,4 @@
-#include "vulkan-engine/VulkanDevice.hpp"
+#include "vulkan-engine/core/VulkanDevice.hpp"
 #include <stdexcept>
 #include <vector>
 

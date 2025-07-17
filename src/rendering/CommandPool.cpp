@@ -1,4 +1,4 @@
-#include "vulkan-engine/CommandPool.hpp"
+#include "vulkan-engine/rendering/CommandPool.hpp"
 #include <stdexcept>
 
 namespace vkeng {
