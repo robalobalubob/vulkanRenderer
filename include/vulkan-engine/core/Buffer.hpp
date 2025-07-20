@@ -4,6 +4,7 @@
 #include <vk_mem_alloc.h>
 #include <memory>
 #include <string>
+#include "Result.hpp"
 
 namespace vkeng {
 
@@ -25,7 +26,8 @@ namespace vkeng {
 
     class Buffer {
     public:
-        static std::shared_ptr<Buffer> create(
+        // FIXED: Use Result pattern consistently
+        static Result<std::shared_ptr<Buffer>> create(
             VkDevice device,
             VmaAllocator allocator,
             const BufferCreateInfo& createInfo);
@@ -38,10 +40,10 @@ namespace vkeng {
         Buffer(Buffer&& other) noexcept;
         Buffer& operator=(Buffer&& other) noexcept;
         
-        // Data access
-        void* map();
+        // Data access - FIXED: Use Result pattern for map()
+        Result<void*> map();
         void unmap();
-        void copyData(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
+        Result<void> copyData(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
         
         // Getters
         VkBuffer getHandle() const { return m_buffer; }
@@ -62,10 +64,11 @@ namespace vkeng {
         void* m_mappedData = nullptr;
     };
 
-// Image class for textures and render targets
+    // Image class for textures and render targets
     class Image {
     public:
-        static std::shared_ptr<Image> create(
+        // Use Result pattern consistently
+        static Result<std::shared_ptr<Image>> create(
             VkDevice device,
             VmaAllocator allocator,
             uint32_t width, uint32_t height,
@@ -74,6 +77,12 @@ namespace vkeng {
             bool hostVisible = false);
         
         ~Image();
+        
+        // Add move semantics for consistency
+        Image(const Image&) = delete;
+        Image& operator=(const Image&) = delete;
+        Image(Image&& other) noexcept;
+        Image& operator=(Image&& other) noexcept;
         
         VkImage getHandle() const { return m_image; }
         VkImageView getImageView() const { return m_imageView; }

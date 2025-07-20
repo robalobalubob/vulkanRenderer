@@ -1,5 +1,6 @@
 #pragma once
 #include "../core/VulkanSwapChain.hpp"
+#include "../core/MemoryManager.hpp"
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <memory>
@@ -40,6 +41,10 @@ namespace vkeng {
         void allocateCommandBuffers();
         void cleanupSwapChain();
 
+        void initMemoryManager();
+        void createVertexBuffer();
+        void createUniformBuffers();
+
         GLFWwindow* window_{nullptr};
         std::unique_ptr<VulkanInstance> instance_{};
         std::unique_ptr<VulkanDevice> device_{};
@@ -47,6 +52,7 @@ namespace vkeng {
         std::unique_ptr<RenderPass> renderPass_{};
         std::unique_ptr<Pipeline> pipeline_{};
         std::unique_ptr<CommandPool> commandPool_{};
+        std::unique_ptr<MemoryManager> memoryManager_{};
         VkSurfaceKHR surface_{VK_NULL_HANDLE};
 
         std::vector<VkFramebuffer> swapChainFramebuffers_;

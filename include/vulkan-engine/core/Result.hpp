@@ -12,9 +12,11 @@ namespace vkeng {
         std::string message;
         std::optional<VkResult> vkResult;
         
-        Error(const std::string& msg) : message(msg) {}
-        Error(const std::string& msg, VkResult result) 
-            : message(msg), vkResult(result) {}
+        Error(const std::string& msg);
+        Error(const std::string& msg, VkResult result);
+        
+        // Add missing method declaration
+        std::string getVulkanErrorString() const;
     };
 
     template<typename T>
@@ -68,6 +70,26 @@ namespace vkeng {
         // Convenience operators
         explicit operator bool() const { return isSuccess(); }
         
+        // Convenience methods for easier usage
+        T valueOr(const T& defaultValue) const {
+            return isSuccess() ? getValue() : defaultValue;
+        }
+        
+        // Chain operations (monadic interface)
+        template<typename F>
+        auto map(F&& func) const -> Result<decltype(func(getValue()))> {
+            using ReturnType = decltype(func(getValue()));
+            if (isSuccess()) {
+                try {
+                    return Result<ReturnType>(func(getValue()));
+                } catch (const std::exception& e) {
+                    return Result<ReturnType>(Error(e.what()));
+                }
+            } else {
+                return Result<ReturnType>(getError());
+            }
+        }
+        
     private:
         std::variant<T, Error> m_value;
     };
@@ -87,9 +109,30 @@ namespace vkeng {
         
         explicit operator bool() const { return isSuccess(); }
         
+        // Void-specific chain operation
+        template<typename F>
+        auto map(F&& func) const -> Result<decltype(func())> {
+            using ReturnType = decltype(func());
+            if (isSuccess()) {
+                try {
+                    return Result<ReturnType>(func());
+                } catch (const std::exception& e) {
+                    return Result<ReturnType>(Error(e.what()));
+                }
+            } else {
+                return Result<ReturnType>(getError());
+            }
+        }
+        
     private:
         std::optional<Error> m_error;
     };
+
+    // Add missing function declarations that are used in .cpp
+    Result<void> checkVkResult(VkResult result, const std::string& operation);
+    
+    template<typename T>
+    Result<T> wrapVkResult(VkResult result, const T& value, const std::string& operation);
 
     // Helper macros for Vulkan calls
     #define VK_CHECK_RESULT(call, errorMsg) \
@@ -106,6 +149,24 @@ namespace vkeng {
             if (result != VK_SUCCESS) { \
                 return Result<decltype(value)>(Error(errorMsg, result)); \
             } \
+        } while(0)
+
+    // Macro for easier error propagation
+    #define VK_TRY(result) \
+        do { \
+            auto _result = (result); \
+            if (!_result.isSuccess()) { \
+                return _result.getError(); \
+            } \
+        } while(0)
+
+    #define VK_TRY_ASSIGN(var, result) \
+        do { \
+            auto _result = (result); \
+            if (!_result.isSuccess()) { \
+                return _result.getError(); \
+            } \
+            var = _result.getValue(); \
         } while(0)
 
 } // namespace vkeng

@@ -1,4 +1,3 @@
-// include/vulkan-engine/core/MemoryManager.hpp
 #pragma once
 
 #include <vulkan/vulkan.h>
@@ -12,9 +11,6 @@
 #include "Buffer.hpp"
 
 namespace vkeng {
-
-    // Forward declarations
-    class Image;
 
     /**
      * Professional Memory Manager using Vulkan Memory Allocator (VMA)
@@ -94,7 +90,7 @@ namespace vkeng {
         Result<std::shared_ptr<Buffer>> createStorageBuffer(VkDeviceSize size, bool hostVisible = false);
 
         // ================================================================
-        // Image Creation
+        // Image Creation  
         // ================================================================
         
         /**
@@ -219,6 +215,9 @@ namespace vkeng {
         void setDebugMode(bool enabled) { m_debugMode = enabled; }
         
         bool isDebugMode() const { return m_debugMode; }
+
+        // ADDED: Getter for VMA allocator (for advanced usage)
+        VmaAllocator getAllocator() const { return m_allocator; }
 
     private:
         // Private constructor - use create() factory method
