@@ -1,3 +1,18 @@
+/**
+ * @file Result.hpp
+ * @brief Error handling system using Result<T> pattern for Vulkan operations
+ * 
+ * This file contains the core error handling infrastructure for the Vulkan engine.
+ * Instead of using exceptions for expected failures (like Vulkan errors), we use
+ * a Result<T> type that explicitly represents success or failure states.
+ * 
+ * Key Error Handling Concepts:
+ * - Result<T>: Contains either a value T or an Error
+ * - Error: Structured error information with optional Vulkan result codes
+ * - Explicit Handling: All failures must be explicitly checked and handled
+ * - No Hidden Exceptions: Vulkan errors don't throw, they return Result types
+ */
+
 #pragma once
 
 #include <stdexcept>
@@ -8,38 +23,103 @@
 
 namespace vkeng {
 
+    /**
+     * @struct Error
+     * @brief Structured error information for Vulkan operations
+     * 
+     * Contains human-readable error messages and optional Vulkan result codes.
+     * Used throughout the engine to provide detailed failure information.
+     */
     struct Error {
-        std::string message;
-        std::optional<VkResult> vkResult;
+        std::string message;                    ///< Human-readable error description
+        std::optional<VkResult> vkResult;       ///< Optional Vulkan result code
         
+        /**
+         * @brief Creates error with message only
+         * @param msg Error description
+         */
         Error(const std::string& msg);
+        
+        /**
+         * @brief Creates error with message and Vulkan result code
+         * @param msg Error description
+         * @param result Vulkan result code that caused the error
+         */
         Error(const std::string& msg, VkResult result);
         
-        // Add missing method declaration
+        /**
+         * @brief Get human-readable string for Vulkan error codes
+         * @return String representation of VkResult enum value
+         */
         std::string getVulkanErrorString() const;
     };
 
+    /**
+     * @class Result
+     * @brief Type-safe error handling for Vulkan operations
+     * 
+     * Result<T> represents either a successful value of type T or an Error.
+     * This pattern eliminates the need for exceptions in expected failure cases
+     * and makes error handling explicit and visible in the API.
+     * 
+     * Usage Patterns:
+     * - Check success: `if (result.isSuccess())`
+     * - Get value: `T value = result.getValue()`
+     * - Handle errors: `Error err = result.getError()`
+     * - Chain operations: `result.map(lambda)`
+     * 
+     * @note Attempting to get value from failed Result throws exception
+     * @warning Always check isSuccess() before calling getValue()
+     */
     template<typename T>
     class Result {
     public:
-        // Success constructors
+        // ============================================================================
+        // Constructors
+        // ============================================================================
+        
+        /**
+         * @brief Construct successful result with value
+         */
         Result(const T& value) : m_value(value) {}
         Result(T&& value) : m_value(std::move(value)) {}
         
-        // Error constructors
+        /**
+         * @brief Construct failed result with error
+         */
         Result(const Error& error) : m_value(error) {}
         Result(Error&& error) : m_value(std::move(error)) {}
         
-        // Check if successful
+        // ============================================================================
+        // Status Checking
+        // ============================================================================
+        
+        /**
+         * @brief Check if result contains a successful value
+         * @return true if result contains value, false if error
+         */
         bool isSuccess() const { 
             return std::holds_alternative<T>(m_value); 
         }
         
+        /**
+         * @brief Check if result contains an error
+         * @return true if result contains error, false if successful
+         */
         bool hasError() const { 
             return std::holds_alternative<Error>(m_value); 
         }
         
-        // Get value (throws if error)
+        // ============================================================================
+        // Value Access
+        // ============================================================================
+        
+        /**
+         * @brief Get the successful value
+         * @return Reference to the contained value
+         * @warning Throws std::runtime_error if result contains error
+         * @note Always check isSuccess() before calling this method
+         */
         const T& getValue() const { 
             if (hasError()) {
                 throw std::runtime_error(getError().message);

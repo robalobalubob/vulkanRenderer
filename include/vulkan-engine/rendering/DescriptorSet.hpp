@@ -1,3 +1,18 @@
+/**
+ * @file DescriptorSet.hpp
+ * @brief Vulkan descriptor set management for shader resource binding
+ * 
+ * This file contains the descriptor set management system for binding
+ * resources (buffers, textures, samplers) to shaders. Descriptor sets
+ * are the mechanism by which shaders access external resources.
+ * 
+ * Key Vulkan Descriptor Concepts:
+ * - Descriptor Set: Collection of resource bindings for shaders
+ * - Descriptor Layout: Template defining what resources can be bound
+ * - Descriptor Pool: Memory allocator for descriptor sets
+ * - Resource Binding: Process of connecting buffers/images to shader uniforms
+ */
+
 #pragma once
 
 #include <vulkan/vulkan.h>

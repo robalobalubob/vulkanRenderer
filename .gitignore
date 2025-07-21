@@ -142,3 +142,9 @@ third_party/*/*.exe
 compile_flags.txt
 .ccls-cache/
 .ccls
+
+# Ignore markdown files except for important documentation
+*.md
+!README.md
+!CHANGELOG.md
+!LICENSE.md

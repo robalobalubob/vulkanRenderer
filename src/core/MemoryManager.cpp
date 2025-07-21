@@ -1,4 +1,3 @@
-// src/core/MemoryManager.cpp
 #include "vulkan-engine/core/MemoryManager.hpp"
 #include <iostream>
 #include <sstream>

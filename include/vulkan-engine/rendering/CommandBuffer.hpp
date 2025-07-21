@@ -1,3 +1,18 @@
+/**
+ * @file CommandBuffer.hpp
+ * @brief Vulkan command buffer recording and submission management
+ * 
+ * This file contains the CommandBuffer class and related synchronization primitives
+ * for recording and submitting GPU commands. Command buffers are the primary way
+ * to issue commands to the GPU in Vulkan.
+ * 
+ * Key Vulkan Command Concepts:
+ * - Command Buffer: Records GPU commands for later submission
+ * - Command Pool: Allocates command buffers from memory pools
+ * - Queue: Submits command buffers to GPU for execution
+ * - Synchronization: Fences and semaphores coordinate GPU/CPU work
+ */
+
 #pragma once
 
 #include <vulkan/vulkan.h>
@@ -12,15 +27,23 @@ namespace vkeng {
     class Image;
     class Pipeline;
 
+    /**
+     * @enum CommandBufferLevel
+     * @brief Defines the level of command buffer
+     */
     enum class CommandBufferLevel {
-        Primary,
-        Secondary
+        Primary,    ///< Primary command buffer - can be submitted to queue
+        Secondary   ///< Secondary command buffer - executed within primary
     };
 
+    /**
+     * @enum CommandBufferUsage  
+     * @brief Defines usage patterns for command buffer recording
+     */
     enum class CommandBufferUsage {
-        OneTime,
-        Reusable,
-        RenderPassContinue
+        OneTime,              ///< One-time submit, then reset
+        Reusable,             ///< Can be submitted multiple times
+        RenderPassContinue    ///< Secondary buffer within render pass
     };
 
     class CommandBuffer {

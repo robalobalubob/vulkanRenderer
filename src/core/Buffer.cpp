@@ -63,7 +63,7 @@ namespace vkeng {
         , m_mappedData(nullptr) {
     }
 
-    std::shared_ptr<Buffer> Buffer::create(VkDevice device, VmaAllocator allocator, 
+    Result<std::shared_ptr<Buffer>> Buffer::create(VkDevice device, VmaAllocator allocator, 
                                         const BufferCreateInfo& createInfo) {
         
         // Convert our usage enum to Vulkan flags
@@ -96,8 +96,8 @@ namespace vkeng {
                                         &buffer, &allocation, &allocationInfo);
         
         if (result != VK_SUCCESS) {
-            std::cerr << "Failed to create buffer: " << result << std::endl;
-            return nullptr;
+            return Result<std::shared_ptr<Buffer>>(
+                Error("Failed to create buffer", result));
         }
         
         // Create our Buffer object using private constructor
@@ -119,7 +119,7 @@ namespace vkeng {
         std::cout << "Created buffer: " << createInfo.size << " bytes, " 
                 << (createInfo.hostVisible ? "host-visible" : "device-local") << std::endl;
         
-        return bufferObj;
+        return Result<std::shared_ptr<Buffer>>(bufferObj);
     }
 
     Buffer::~Buffer() {
@@ -181,23 +181,23 @@ namespace vkeng {
 // Data Access Methods
 // ============================================================================
 
-    void* Buffer::map() {
+    Result<void*> Buffer::map() {
         if (!m_hostVisible) {
-            throw std::runtime_error("Cannot map non-host-visible buffer");
+            return Result<void*>(Error("Cannot map non-host-visible buffer"));
         }
         
         if (m_mappedData) {
             // Already mapped (persistent mapping)
-            return m_mappedData;
+            return Result<void*>(m_mappedData);
         }
         
         // Map the memory
         VkResult result = vmaMapMemory(m_allocator, m_allocation, &m_mappedData);
         if (result != VK_SUCCESS) {
-            throw std::runtime_error("Failed to map buffer memory");
+            return Result<void*>(Error("Failed to map buffer memory", result));
         }
         
-        return m_mappedData;
+        return Result<void*>(m_mappedData);
     }
 
     void Buffer::unmap() {
@@ -211,17 +211,21 @@ namespace vkeng {
         }
     }
 
-    void Buffer::copyData(const void* data, VkDeviceSize size, VkDeviceSize offset) {
+    Result<void> Buffer::copyData(const void* data, VkDeviceSize size, VkDeviceSize offset) {
         if (!m_hostVisible) {
-            throw std::runtime_error("Cannot directly copy to non-host-visible buffer. Use staging buffer.");
+            return Result<void>(Error("Cannot directly copy to non-host-visible buffer. Use staging buffer."));
         }
         
         if (offset + size > m_size) {
-            throw std::runtime_error("Copy size exceeds buffer size");
+            return Result<void>(Error("Copy size exceeds buffer size"));
         }
         
         // Map if not already mapped
-        void* mappedData = map();
+        auto mapResult = map();
+        if (!mapResult) {
+            return Result<void>(mapResult.getError());
+        }
+        void* mappedData = mapResult.getValue();
         
         // Copy the data
         std::memcpy(static_cast<char*>(mappedData) + offset, data, size);
@@ -231,6 +235,8 @@ namespace vkeng {
         
         // Note: We don't unmap here because the buffer might be persistently mapped
         // The destructor will handle cleanup
+        
+        return Result<void>();
     }
 
 // ============================================================================
@@ -250,7 +256,7 @@ namespace vkeng {
         , m_format(format) {
     }
 
-    std::shared_ptr<Image> Image::create(VkDevice device, VmaAllocator allocator,
+    Result<std::shared_ptr<Image>> Image::create(VkDevice device, VmaAllocator allocator,
                                         uint32_t width, uint32_t height,
                                         VkFormat format, VkImageUsageFlags usage,
                                         bool hostVisible) {
@@ -288,8 +294,8 @@ namespace vkeng {
                                         &image, &allocation, nullptr);
         
         if (result != VK_SUCCESS) {
-            std::cerr << "Failed to create image: " << result << std::endl;
-            return nullptr;
+            return Result<std::shared_ptr<Image>>(
+                Error("Failed to create image", result));
         }
         
         // Create image view
@@ -312,12 +318,13 @@ namespace vkeng {
         result = vkCreateImageView(device, &viewInfo, nullptr, &imageView);
         if (result != VK_SUCCESS) {
             vmaDestroyImage(allocator, image, allocation);
-            std::cerr << "Failed to create image view: " << result << std::endl;
-            return nullptr;
+            return Result<std::shared_ptr<Image>>(
+                Error("Failed to create image view", result));
         }
         
-        return std::shared_ptr<Image>(new Image(device, allocator, image, allocation,
+        auto imageObj = std::shared_ptr<Image>(new Image(device, allocator, image, allocation,
                                             imageView, width, height, format));
+        return Result<std::shared_ptr<Image>>(imageObj);
     }
 
     Image::~Image() {

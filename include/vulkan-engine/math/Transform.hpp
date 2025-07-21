@@ -1,3 +1,18 @@
+/**
+ * @file Transform.hpp
+ * @brief 3D transformation utilities using GLM for Vulkan rendering
+ * 
+ * This file contains the Transform class which provides a complete 3D
+ * transformation system for positioning, rotating, and scaling objects
+ * in 3D space. Essential for scene graph and object positioning.
+ * 
+ * Key 3D Mathematics Concepts:
+ * - Position: Translation in 3D space (vec3)
+ * - Rotation: Quaternion-based rotation (no gimbal lock)
+ * - Scale: Non-uniform scaling along each axis
+ * - Transformation Matrix: Combined transformation for GPU upload
+ */
+
 #pragma once
 
 #include <glm/glm.hpp>
@@ -7,6 +22,23 @@
 
 namespace vkeng {
 
+    /**
+     * @class Transform
+     * @brief 3D transformation system for position, rotation, and scale
+     * 
+     * This class provides a complete transformation system using GLM types
+     * for 3D graphics. It supports position, quaternion-based rotation, and
+     * scale operations with automatic matrix generation for GPU rendering.
+     * 
+     * 3D Transformation Concepts:
+     * - TRS Order: Translation, Rotation, Scale transformation order
+     * - Quaternions: Prevent gimbal lock, smooth interpolation
+     * - Matrix Generation: Efficient GPU-ready transformation matrices
+     * - Local vs World Space: Transform hierarchy support
+     * 
+     * @note Uses quaternions for rotation to avoid gimbal lock issues
+     * @warning Matrix is recalculated on each getMatrix() call
+     */
     class Transform {
     public:
         Transform();

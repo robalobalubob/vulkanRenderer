@@ -44,6 +44,9 @@ namespace vkeng {
         void initMemoryManager();
         void createVertexBuffer();
         void createUniformBuffers();
+        
+        // Phase 1 verification
+        void testPhase1Systems();
 
         GLFWwindow* window_{nullptr};
         std::unique_ptr<VulkanInstance> instance_{};

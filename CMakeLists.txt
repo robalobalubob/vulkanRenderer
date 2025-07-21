@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(vulkan-engine LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
@@ -20,11 +21,16 @@ src/HelloTriangleApp.cpp
 src/core/VulkanInstance.cpp
 src/core/VulkanDevice.cpp
 src/core/VulkanSwapChain.cpp
+src/core/Result.cpp
+src/core/VmaImplementation.cpp
+src/core/MemoryManager.cpp
 src/core/Buffer.cpp
 src/math/Transform.cpp
 src/rendering/RenderPass.cpp
 src/rendering/Pipeline.cpp
 src/rendering/CommandPool.cpp
+src/rendering/CommandBuffer.cpp
+src/rendering/DescriptorSet.cpp
 )
 
 target_link_libraries(test_scene
