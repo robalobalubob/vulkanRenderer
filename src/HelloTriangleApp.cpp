@@ -23,7 +23,7 @@ namespace vkeng {
         initWindow();
         initVulkan();
         mainLoop();
-        cleanup();
+        // Resources are released in the destructor via cleanup()
     }
 
     void HelloTriangleApp::initWindow() {
@@ -132,12 +132,14 @@ namespace vkeng {
         // Destroy surface before instance
         if (surface_ != VK_NULL_HANDLE && instance_) {
             vkDestroySurfaceKHR(instance_->get(), surface_, nullptr);
+            surface_ = VK_NULL_HANDLE;
         }
-        
+
         instance_.reset();
 
         if (window_) {
             glfwDestroyWindow(window_);
+            window_ = nullptr;
             glfwTerminate();
         }
     }
