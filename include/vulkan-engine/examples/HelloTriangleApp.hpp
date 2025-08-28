@@ -1,6 +1,7 @@
 #pragma once
 #include "../core/VulkanSwapChain.hpp"
 #include "../core/MemoryManager.hpp"
+#include "../scene/SceneNode.hpp"
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <memory>
@@ -29,6 +30,7 @@ namespace vkeng {
         private:
         void initWindow();
         void initVulkan();
+        void initScene();
         void mainLoop();
         void cleanup();
 
@@ -56,6 +58,7 @@ namespace vkeng {
         std::unique_ptr<Pipeline> pipeline_{};
         std::unique_ptr<CommandPool> commandPool_{};
         std::unique_ptr<MemoryManager> memoryManager_{};
+        std::shared_ptr<SceneNode> rootNode_{};
         VkSurfaceKHR surface_{VK_NULL_HANDLE};
 
         std::vector<VkFramebuffer> swapChainFramebuffers_;

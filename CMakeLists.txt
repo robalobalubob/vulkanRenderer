@@ -31,6 +31,7 @@ src/rendering/Pipeline.cpp
 src/rendering/CommandPool.cpp
 src/rendering/CommandBuffer.cpp
 src/rendering/DescriptorSet.cpp
+src/scene/SceneNode.cpp
 )
 
 target_link_libraries(test_scene

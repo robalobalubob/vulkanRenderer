@@ -9,9 +9,9 @@ echo "Compiling shaders..."
 echo "Compiling vertex shader..."
 glslc shader.vert -o vert.spv
 if [ $? -eq 0 ]; then
-    echo "✓ Vertex shader compiled successfully"
+    echo "Vertex shader compiled successfully"
 else
-    echo "✗ Failed to compile vertex shader"
+    echo "Failed to compile vertex shader"
     exit 1
 fi
 
@@ -19,9 +19,9 @@ fi
 echo "Compiling fragment shader..."
 glslc shader.frag -o frag.spv
 if [ $? -eq 0 ]; then
-    echo "✓ Fragment shader compiled successfully"
+    echo "Fragment shader compiled successfully"
 else
-    echo "✗ Failed to compile fragment shader"
+    echo "Failed to compile fragment shader"
     exit 1
 fi
 

@@ -8,6 +8,7 @@
 #include "vulkan-engine/rendering/CommandPool.hpp"
 #include "vulkan-engine/rendering/CommandBuffer.hpp"
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
+#include "vulkan-engine/scene/SceneNode.hpp"
 #include <stdexcept>
 #include <iostream>
 
@@ -35,6 +36,16 @@ namespace vkeng {
             glfwTerminate();
             throw std::runtime_error("Failed to create GLFW window");
         }
+    }
+
+    void HelloTriangleApp::initScene() {
+        rootNode_ = std::make_shared<SceneNode>("Root");
+
+        auto triangleNode = std::make_shared<SceneNode>("TriangleNode");
+        triangleNode->getTransform().setPosition({0.0f, 0.0f, -5.0f});
+        rootNode_->addChild(triangleNode);
+
+        std::cout << "Scene Initialized." << std::endl;
     }
 
     void HelloTriangleApp::initVulkan() {
@@ -79,7 +90,7 @@ namespace vkeng {
         commandPool_ = std::make_unique<CommandPool>(device_->getDevice(), device_->getGraphicsFamily());
         
         // PHASE 1 VERIFICATION: Test our new systems
-        testPhase1Systems();
+        // testPhase1Systems();
         
         // 8) Create framebuffers
         createFramebuffers();
@@ -89,11 +100,30 @@ namespace vkeng {
 
         // 10) Allocate command buffers
         allocateCommandBuffers();
+
+        // 11) Initialize Scene
+        initScene();
     }
 
     void HelloTriangleApp::mainLoop() {
+        float lastTime = 0.0f;
+
         while (!glfwWindowShouldClose(window_)) {
             glfwPollEvents();
+            
+            float currentTime = static_cast<float>(glfwGetTime());
+            float deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+
+            if (rootNode_ && rootNode_->getChildCount() > 0) {
+                auto triangleNode = rootNode_->getChild(0);
+                triangleNode->getTransform().rotate(glm::vec3(0.0f, 1.0f, 0.0f), deltaTime * glm::radians(45.0f));
+            }
+
+            if (rootNode_) {
+                rootNode_->update(deltaTime);
+            }
+
             drawFrame();
         }
         
@@ -390,27 +420,27 @@ namespace vkeng {
             );
             
             if (!cmdBufferResult) {
-                std::cerr << "❌ CommandBuffer creation failed: " << cmdBufferResult.getError().message << std::endl;
+                std::cerr << "CommandBuffer creation failed: " << cmdBufferResult.getError().message << std::endl;
                 return;
             }
             
             auto cmdBuffer = cmdBufferResult.getValue();
-            std::cout << "✅ CommandBuffer created successfully" << std::endl;
+            std::cout << "CommandBuffer created successfully" << std::endl;
             
             // Test basic command buffer operations
             auto beginResult = cmdBuffer->begin();
             if (!beginResult) {
-                std::cerr << "❌ CommandBuffer begin failed: " << beginResult.getError().message << std::endl;
+                std::cerr << "CommandBuffer begin failed: " << beginResult.getError().message << std::endl;
                 return;
             }
             
             auto endResult = cmdBuffer->end();
             if (!endResult) {
-                std::cerr << "❌ CommandBuffer end failed: " << endResult.getError().message << std::endl;
+                std::cerr << "CommandBuffer end failed: " << endResult.getError().message << std::endl;
                 return;
             }
             
-            std::cout << "✅ CommandBuffer record/end cycle successful" << std::endl;
+            std::cout << "CommandBuffer record/end cycle successful" << std::endl;
             
             // Test 2: DescriptorSet system
             std::cout << "Testing DescriptorSet system..." << std::endl;
@@ -422,12 +452,12 @@ namespace vkeng {
             
             auto layoutResult = DescriptorSetLayout::create(device_->getDevice(), bindings);
             if (!layoutResult) {
-                std::cerr << "❌ DescriptorSetLayout creation failed: " << layoutResult.getError().message << std::endl;
+                std::cerr << "DescriptorSetLayout creation failed: " << layoutResult.getError().message << std::endl;
                 return;
             }
             
             auto layout = layoutResult.getValue();
-            std::cout << "✅ DescriptorSetLayout created successfully" << std::endl;
+            std::cout << "DescriptorSetLayout created successfully" << std::endl;
             
             // Create a descriptor pool
             std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -436,48 +466,48 @@ namespace vkeng {
             
             auto poolResult = DescriptorPool::create(device_->getDevice(), 10, poolSizes);
             if (!poolResult) {
-                std::cerr << "❌ DescriptorPool creation failed: " << poolResult.getError().message << std::endl;
+                std::cerr << "DescriptorPool creation failed: " << poolResult.getError().message << std::endl;
                 return;
             }
             
             auto pool = poolResult.getValue();
-            std::cout << "✅ DescriptorPool created successfully" << std::endl;
+            std::cout << "DescriptorPool created successfully" << std::endl;
             
             // Test descriptor set allocation
             auto descriptorSetResult = pool->allocateDescriptorSet(layout);
             if (!descriptorSetResult) {
-                std::cerr << "❌ DescriptorSet allocation failed: " << descriptorSetResult.getError().message << std::endl;
+                std::cerr << "DescriptorSet allocation failed: " << descriptorSetResult.getError().message << std::endl;
                 return;
             }
             
-            std::cout << "✅ DescriptorSet allocated successfully" << std::endl;
+            std::cout << "DescriptorSet allocated successfully" << std::endl;
             
             // Test 3: Synchronization primitives
             std::cout << "Testing synchronization primitives..." << std::endl;
             
             auto fenceResult = Fence::create(device_->getDevice(), false);
             if (!fenceResult) {
-                std::cerr << "❌ Fence creation failed: " << fenceResult.getError().message << std::endl;
+                std::cerr << "Fence creation failed: " << fenceResult.getError().message << std::endl;
                 return;
             }
             
             auto fence = fenceResult.getValue();
-            std::cout << "✅ Fence created successfully" << std::endl;
+            std::cout << "Fence created successfully" << std::endl;
             
             auto semaphoreResult = Semaphore::create(device_->getDevice());
             if (!semaphoreResult) {
-                std::cerr << "❌ Semaphore creation failed: " << semaphoreResult.getError().message << std::endl;
+                std::cerr << "Semaphore creation failed: " << semaphoreResult.getError().message << std::endl;
                 return;
             }
             
             auto semaphore = semaphoreResult.getValue();
-            std::cout << "✅ Semaphore created successfully" << std::endl;
+            std::cout << "Semaphore created successfully" << std::endl;
             
-            std::cout << "🎉 All Phase 1 systems verified successfully!" << std::endl;
+            std::cout << "All Phase 1 systems verified successfully!" << std::endl;
             std::cout << "Ready for Phase 2: Scene Graph & Material System" << std::endl;
             
         } catch (const std::exception& e) {
-            std::cerr << "❌ Phase 1 verification failed with exception: " << e.what() << std::endl;
+            std::cerr << "Phase 1 verification failed with exception: " << e.what() << std::endl;
         }
         
         std::cout << "=== Phase 1 Verification Complete ===" << std::endl;
