@@ -33,6 +33,7 @@ src/rendering/CommandPool.cpp
 src/rendering/CommandBuffer.cpp
 src/rendering/DescriptorSet.cpp
 src/rendering/Vertex.cpp
+src/resources/Mesh.cpp
 src/scene/SceneNode.cpp
 )
 

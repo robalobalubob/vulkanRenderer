@@ -4,6 +4,7 @@
 #include "../core/Buffer.hpp"
 #include "../rendering/Camera.hpp"
 #include "../scene/SceneNode.hpp"
+#include "../resources/Mesh.hpp"
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <memory>
@@ -92,6 +93,7 @@ namespace vkeng {
         std::shared_ptr<SceneNode> rootNode_{};
         std::unique_ptr<PerspectiveCamera> camera_;
         std::vector<std::shared_ptr<Buffer>> uniformBuffers_;
+        std::shared_ptr<Mesh> mesh_;
 
         size_t getMaxFramesInFlight() const {
             return swapChain_ ? swapChain_->imageViews().size() : 2; // Default to 2 if no swap chain

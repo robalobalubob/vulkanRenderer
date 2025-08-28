@@ -10,6 +10,7 @@
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
+#include "vulkan-engine/resources/Mesh.hpp"
 #include <stdexcept>
 #include <iostream>
 
@@ -133,6 +134,7 @@ namespace vkeng {
         device_ = std::make_unique<VulkanDevice>(instance_->get(), surface_);
 
         initMemoryManager();
+        createVertexBuffer();
 
         // 4) SwapChain
         int width, height;
@@ -337,61 +339,40 @@ namespace vkeng {
     }
 
     void HelloTriangleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-        // Begin recording commands
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = 0; // Optional flags for one-time submit, etc.
-        beginInfo.pInheritanceInfo = nullptr; // Only relevant for secondary command buffers
-        
+
         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("Failed to begin recording command buffer!");
         }
-        
-        // Define the render pass
+
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = renderPass_->get();
         renderPassInfo.framebuffer = swapChainFramebuffers_[imageIndex];
-        
-        // Define the render area (the entire framebuffer)
         renderPassInfo.renderArea.offset = {0, 0};
         renderPassInfo.renderArea.extent = swapChain_->extent();
-        
-        // Define the clear color (black with full opacity)
+
         VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearColor;
-        
-        // Begin the render pass
+
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-        
+
         // Bind the graphics pipeline
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->getPipeline());
-        
-        // Set the viewport
-        // VkViewport viewport{};
-        // viewport.x = 0.0f;
-        // viewport.y = 0.0f;
-        // viewport.width = static_cast<float>(swapChain_->extent().width);
-        // viewport.height = static_cast<float>(swapChain_->extent().height);
-        // viewport.minDepth = 0.0f;
-        // viewport.maxDepth = 1.0f;
-        // vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-        
-        // // Set the scissor rectangle
-        // VkRect2D scissor{};
-        // scissor.offset = {0, 0};
-        // scissor.extent = swapChain_->extent();
-        // vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-        
-        // Draw the triangle!
-        // 3 vertices, 1 instance, first vertex at index 0, first instance at index 0
-        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-        
-        // End the render pass
+
+        // Bind the mesh's vertex and index buffers
+        mesh_->bind(commandBuffer);
+
+        // Bind the descriptor set for the current frame's UBO
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->getLayout(), 0, 1, &descriptorSets_[imageIndex], 0, nullptr);
+
+        // Issue the indexed draw call
+        vkCmdDrawIndexed(commandBuffer, mesh_->getIndexCount(), 1, 0, 0, 0);
+
         vkCmdEndRenderPass(commandBuffer);
-        
-        // Finish recording
+
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("Failed to record command buffer!");
         }
@@ -448,6 +429,19 @@ namespace vkeng {
         swapChainFramebuffers_.clear();
         
         // The swap chain itself will be destroyed when we reset the unique_ptr
+    }
+
+    void HelloTriangleApp::createVertexBuffer() {
+        const std::vector<Vertex> vertices = {
+            {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+            {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+            {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+            {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}}
+        };
+        const std::vector<uint32_t> indices = {
+            0, 1, 2, 2, 3, 0
+        };
+        mesh_ = std::make_shared<Mesh>(memoryManager_, vertices, indices);
     }
 
     void HelloTriangleApp::createUniformBuffers() {
