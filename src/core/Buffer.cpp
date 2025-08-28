@@ -123,12 +123,8 @@ namespace vkeng {
     }
 
     Buffer::~Buffer() {
-        if (m_mappedData) {
-            // Unmap if we have mapped data
-            vmaUnmapMemory(m_allocator, m_allocation);
-            m_mappedData = nullptr;
-        }
-        
+        std::cout << "Destroying Buffer..." << std::endl;
+
         if (m_buffer != VK_NULL_HANDLE) {
             vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
             m_buffer = VK_NULL_HANDLE;

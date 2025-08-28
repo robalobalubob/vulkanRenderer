@@ -28,7 +28,7 @@ namespace vkeng {
         
         glm::vec3 getPosition() const;
         glm::quat getRotation() const;
-        Transform& getTransform() { return m_transform; }
+        Transform& getTransform() { m_viewDirty = true; return m_transform; }
         const Transform& getTransform() const { return m_transform; }
         
         // View matrix

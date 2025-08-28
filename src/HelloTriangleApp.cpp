@@ -8,6 +8,7 @@
 #include "vulkan-engine/rendering/CommandPool.hpp"
 #include "vulkan-engine/rendering/CommandBuffer.hpp"
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
+#include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
 #include <stdexcept>
 #include <iostream>
@@ -16,15 +17,63 @@ namespace vkeng {
     HelloTriangleApp::HelloTriangleApp() : window_(nullptr) {
     }
 
+    // The destructor is now responsible for cleanup.
     HelloTriangleApp::~HelloTriangleApp() noexcept {
-        cleanup();
+        // 1. Wait for the GPU to be idle. This is the most important step.
+        if (device_) {
+            vkDeviceWaitIdle(device_->getDevice());
+        }
+
+        // 2. Clear all CPU-side objects that hold GPU resources.
+        // This triggers their destructors, which will call vmaDestroyBuffer, etc.
+        // These calls need the MemoryManager and Device to be alive.
+        uniformBuffers_.clear();
+        rootNode_.reset();
+
+        for (auto framebuffer : swapChainFramebuffers_) {
+            if (device_) vkDestroyFramebuffer(device_->getDevice(), framebuffer, nullptr);
+        }
+        for (auto& frame : frames_) {
+            if (device_) {
+                vkDestroySemaphore(device_->getDevice(), frame.imageAvailableSemaphore, nullptr);
+                vkDestroySemaphore(device_->getDevice(), frame.renderFinishedSemaphore, nullptr);
+                vkDestroyFence(device_->getDevice(), frame.inFlightFence, nullptr);
+            }
+        }
+
+        // 3. Destroy the main rendering objects.
+        pipeline_.reset();
+        renderPass_.reset();
+        commandPool_.reset();
+        swapChain_.reset();
+
+        // 4. Now that all buffers are guaranteed to be gone, destroy the allocator.
+        memoryManager_.reset();
+
+        // 5. CRITICAL FIX: The device must be the LAST core object to be destroyed.
+        //    All the cleanup above depends on the device being valid.
+        device_.reset();
+
+        // 6. Destroy the platform-specific surface and the instance.
+        if (surface_ != VK_NULL_HANDLE && instance_) {
+            vkDestroySurfaceKHR(instance_->get(), surface_, nullptr);
+        }
+        instance_.reset();
+
+        // 7. Clean up the window and GLFW.
+        if (window_) {
+            glfwDestroyWindow(window_);
+        }
+        glfwTerminate();
+
+        std::cout << "Cleanup complete." << std::endl;
     }
 
     void HelloTriangleApp::run() {
         initWindow();
         initVulkan();
         mainLoop();
-        cleanup();
+        //cleanup(); No longer call cleanup due to changes in destructor
     }
 
     void HelloTriangleApp::initWindow() {
@@ -39,6 +88,9 @@ namespace vkeng {
     }
 
     void HelloTriangleApp::initScene() {
+        camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float) swapChain_->extent().height, 0.1f, 10.0f);
+        camera_->getTransform().setPosition(0.0f, 0.0f, 3.0f); // Position the camera
+
         rootNode_ = std::make_shared<SceneNode>("Root");
 
         auto triangleNode = std::make_shared<SceneNode>("TriangleNode");
@@ -46,6 +98,15 @@ namespace vkeng {
         rootNode_->addChild(triangleNode);
 
         std::cout << "Scene Initialized." << std::endl;
+    }
+
+    void HelloTriangleApp::initMemoryManager() {
+        auto result = MemoryManager::create(instance_->get(), device_->getPhysicalDevice(), device_->getDevice());
+        if (!result) {
+            throw std::runtime_error("Failed to create MemoryManager: " + result.getError().message);
+        }
+        memoryManager_ = result.getValue();
+        std::cout << "MemoryManager initialized." << std::endl;
     }
 
     void HelloTriangleApp::initVulkan() {
@@ -62,6 +123,8 @@ namespace vkeng {
 
         // 3) Device
         device_ = std::make_unique<VulkanDevice>(instance_->get(), surface_);
+
+        initMemoryManager();
 
         // 4) SwapChain
         int width, height;
@@ -88,6 +151,8 @@ namespace vkeng {
 
         // 7) CommandPool
         commandPool_ = std::make_unique<CommandPool>(device_->getDevice(), device_->getGraphicsFamily());
+
+        createUniformBuffers();
         
         // 8) Create framebuffers
         createFramebuffers();
@@ -129,43 +194,8 @@ namespace vkeng {
     }
 
     void HelloTriangleApp::cleanup() {
-        // Wait for device to finish
         if (device_) {
             vkDeviceWaitIdle(device_->getDevice());
-        }
-        
-        // Clean up frame data
-        for (auto& frame : frames_) {
-            if (device_) {
-                vkDestroySemaphore(device_->getDevice(), frame.imageAvailableSemaphore, nullptr);
-                vkDestroySemaphore(device_->getDevice(), frame.renderFinishedSemaphore, nullptr);
-                vkDestroyFence(device_->getDevice(), frame.inFlightFence, nullptr);
-            }
-        }
-        
-        // Clean up framebuffers
-        for (auto framebuffer : swapChainFramebuffers_) {
-            if (device_) {
-                vkDestroyFramebuffer(device_->getDevice(), framebuffer, nullptr);
-            }
-        }
-        
-        commandPool_.reset();
-        pipeline_.reset();
-        renderPass_.reset();
-        swapChain_.reset();
-        device_.reset();
-        
-        // Destroy surface before instance
-        if (surface_ != VK_NULL_HANDLE && instance_) {
-            vkDestroySurfaceKHR(instance_->get(), surface_, nullptr);
-        }
-        
-        instance_.reset();
-
-        if (window_) {
-            glfwDestroyWindow(window_);
-            glfwTerminate();
         }
     }
 
@@ -403,6 +433,19 @@ namespace vkeng {
         swapChainFramebuffers_.clear();
         
         // The swap chain itself will be destroyed when we reset the unique_ptr
+    }
+
+    void HelloTriangleApp::createUniformBuffers() {
+        VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+        uniformBuffers_.resize(getMaxFramesInFlight());
+
+        for (size_t i = 0; i < getMaxFramesInFlight(); i++) {
+            auto bufferResult = memoryManager_->createUniformBuffer(bufferSize);
+            if (!bufferResult) {
+                throw std::runtime_error("Failed to create uniform buffer: " + bufferResult.getError().message);
+            }
+            uniformBuffers_[i] = bufferResult.getValue();
+        }
     }
     
 } // namespace vkeng

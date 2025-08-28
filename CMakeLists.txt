@@ -26,11 +26,13 @@ src/core/VmaImplementation.cpp
 src/core/MemoryManager.cpp
 src/core/Buffer.cpp
 src/math/Transform.cpp
+src/rendering/Camera.cpp
 src/rendering/RenderPass.cpp
 src/rendering/Pipeline.cpp
 src/rendering/CommandPool.cpp
 src/rendering/CommandBuffer.cpp
 src/rendering/DescriptorSet.cpp
+src/rendering/Vertex.cpp
 src/scene/SceneNode.cpp
 )
 
