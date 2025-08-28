@@ -89,9 +89,6 @@ namespace vkeng {
         // 7) CommandPool
         commandPool_ = std::make_unique<CommandPool>(device_->getDevice(), device_->getGraphicsFamily());
         
-        // PHASE 1 VERIFICATION: Test our new systems
-        // testPhase1Systems();
-        
         // 8) Create framebuffers
         createFramebuffers();
         
@@ -406,111 +403,6 @@ namespace vkeng {
         swapChainFramebuffers_.clear();
         
         // The swap chain itself will be destroyed when we reset the unique_ptr
-    }
-    
-    void HelloTriangleApp::testPhase1Systems() {
-        std::cout << "=== Phase 1 System Verification ===" << std::endl;
-        
-        try {
-            // Test 1: CommandBuffer creation
-            std::cout << "Testing CommandBuffer system..." << std::endl;
-            auto cmdBufferResult = CommandBuffer::create(
-                device_->getDevice(), 
-                commandPool_->getPool()
-            );
-            
-            if (!cmdBufferResult) {
-                std::cerr << "CommandBuffer creation failed: " << cmdBufferResult.getError().message << std::endl;
-                return;
-            }
-            
-            auto cmdBuffer = cmdBufferResult.getValue();
-            std::cout << "CommandBuffer created successfully" << std::endl;
-            
-            // Test basic command buffer operations
-            auto beginResult = cmdBuffer->begin();
-            if (!beginResult) {
-                std::cerr << "CommandBuffer begin failed: " << beginResult.getError().message << std::endl;
-                return;
-            }
-            
-            auto endResult = cmdBuffer->end();
-            if (!endResult) {
-                std::cerr << "CommandBuffer end failed: " << endResult.getError().message << std::endl;
-                return;
-            }
-            
-            std::cout << "CommandBuffer record/end cycle successful" << std::endl;
-            
-            // Test 2: DescriptorSet system
-            std::cout << "Testing DescriptorSet system..." << std::endl;
-            
-            // Create a simple uniform buffer layout
-            std::vector<DescriptorBinding> bindings = {
-                {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT}
-            };
-            
-            auto layoutResult = DescriptorSetLayout::create(device_->getDevice(), bindings);
-            if (!layoutResult) {
-                std::cerr << "DescriptorSetLayout creation failed: " << layoutResult.getError().message << std::endl;
-                return;
-            }
-            
-            auto layout = layoutResult.getValue();
-            std::cout << "DescriptorSetLayout created successfully" << std::endl;
-            
-            // Create a descriptor pool
-            std::vector<VkDescriptorPoolSize> poolSizes = {
-                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10}
-            };
-            
-            auto poolResult = DescriptorPool::create(device_->getDevice(), 10, poolSizes);
-            if (!poolResult) {
-                std::cerr << "DescriptorPool creation failed: " << poolResult.getError().message << std::endl;
-                return;
-            }
-            
-            auto pool = poolResult.getValue();
-            std::cout << "DescriptorPool created successfully" << std::endl;
-            
-            // Test descriptor set allocation
-            auto descriptorSetResult = pool->allocateDescriptorSet(layout);
-            if (!descriptorSetResult) {
-                std::cerr << "DescriptorSet allocation failed: " << descriptorSetResult.getError().message << std::endl;
-                return;
-            }
-            
-            std::cout << "DescriptorSet allocated successfully" << std::endl;
-            
-            // Test 3: Synchronization primitives
-            std::cout << "Testing synchronization primitives..." << std::endl;
-            
-            auto fenceResult = Fence::create(device_->getDevice(), false);
-            if (!fenceResult) {
-                std::cerr << "Fence creation failed: " << fenceResult.getError().message << std::endl;
-                return;
-            }
-            
-            auto fence = fenceResult.getValue();
-            std::cout << "Fence created successfully" << std::endl;
-            
-            auto semaphoreResult = Semaphore::create(device_->getDevice());
-            if (!semaphoreResult) {
-                std::cerr << "Semaphore creation failed: " << semaphoreResult.getError().message << std::endl;
-                return;
-            }
-            
-            auto semaphore = semaphoreResult.getValue();
-            std::cout << "Semaphore created successfully" << std::endl;
-            
-            std::cout << "All Phase 1 systems verified successfully!" << std::endl;
-            std::cout << "Ready for Phase 2: Scene Graph & Material System" << std::endl;
-            
-        } catch (const std::exception& e) {
-            std::cerr << "Phase 1 verification failed with exception: " << e.what() << std::endl;
-        }
-        
-        std::cout << "=== Phase 1 Verification Complete ===" << std::endl;
     }
     
 } // namespace vkeng
