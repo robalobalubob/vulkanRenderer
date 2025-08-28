@@ -48,7 +48,11 @@ namespace vkeng {
 
         void createVertexBuffer();
         void createUniformBuffers();
-        
+        void createDescriptorSetLayout();
+        void createDescriptorPool();
+        void createDescriptorSets();
+
+        void updateUniformBuffer(uint32_t currentImage);
 
         // --- Core Vulkan Objects (Declaration order matters for RAII cleanup!) ---
 
@@ -69,6 +73,10 @@ namespace vkeng {
         std::unique_ptr<RenderPass> renderPass_{};
         std::unique_ptr<Pipeline> pipeline_{};
         std::unique_ptr<CommandPool> commandPool_{};
+
+        VkDescriptorSetLayout descriptorSetLayout_{};
+        VkDescriptorPool descriptorPool_{};
+        std::vector<VkDescriptorSet> descriptorSets_;
 
         // 5. Per-frame data (including command buffers and sync objects)
         struct FrameData {

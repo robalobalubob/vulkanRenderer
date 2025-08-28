@@ -5,7 +5,7 @@
 #include <vulkan/vulkan_core.h>
 
 namespace vkeng {
-    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkExtent2D extent, 
+    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkExtent2D extent, VkDescriptorSetLayout descriptorSetLayout,
                        const std::filesystem::path& vertPath, const std::filesystem::path& fragPath)
         : device_(device) {
         
@@ -96,7 +96,8 @@ namespace vkeng {
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 0;
+        pipelineLayoutInfo.setLayoutCount = 1;
+        pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
         pipelineLayoutInfo.pushConstantRangeCount = 0;
 
         if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &layout_) != VK_SUCCESS) {

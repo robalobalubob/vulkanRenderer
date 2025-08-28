@@ -59,6 +59,7 @@ namespace vkeng {
         explicit Pipeline(VkDevice device,
             VkRenderPass renderPass,
             VkExtent2D extent,
+            VkDescriptorSetLayout descriptorSetLayout,
             const std::filesystem::path& vertPath,
             const std::filesystem::path& fragPath);
             

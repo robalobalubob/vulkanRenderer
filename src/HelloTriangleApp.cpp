@@ -47,6 +47,14 @@ namespace vkeng {
         commandPool_.reset();
         swapChain_.reset();
 
+        if (descriptorPool_ != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device_->getDevice(), descriptorPool_, nullptr);
+        }
+
+        if (descriptorSetLayout_ != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device_->getDevice(), descriptorSetLayout_, nullptr);
+        }
+
         // 4. Now that all buffers are guaranteed to be gone, destroy the allocator.
         memoryManager_.reset();
 
@@ -140,11 +148,14 @@ namespace vkeng {
         // 5) RenderPass
         renderPass_ = std::make_unique<RenderPass>(device_->getDevice(), swapChain_->imageFormat());
 
+        createDescriptorSetLayout();
+
         // 6) Pipeline
         pipeline_ = std::make_unique<Pipeline>(
             device_->getDevice(), 
             renderPass_->get(), 
             swapChain_->extent(), 
+            descriptorSetLayout_,
             "../shaders/vert.spv", 
             "../shaders/frag.spv"
         );
@@ -153,7 +164,9 @@ namespace vkeng {
         commandPool_ = std::make_unique<CommandPool>(device_->getDevice(), device_->getGraphicsFamily());
 
         createUniformBuffers();
-        
+        createDescriptorPool();
+        createDescriptorSets();
+
         // 8) Create framebuffers
         createFramebuffers();
         
@@ -270,6 +283,8 @@ namespace vkeng {
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             throw std::runtime_error("Failed to acquire swap chain image!");
         }
+
+        updateUniformBuffer(imageIndex);
         
         // Only reset the fence if we're submitting work
         vkResetFences(device_->getDevice(), 1, &frame.inFlightFence);
@@ -446,6 +461,88 @@ namespace vkeng {
             }
             uniformBuffers_[i] = bufferResult.getValue();
         }
+    }
+
+    void HelloTriangleApp::createDescriptorSetLayout() {
+        VkDescriptorSetLayoutBinding uboLayoutBinding{};
+        uboLayoutBinding.binding = 0; // The binding point used in the shader
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.descriptorCount = 1; // We have a single UBO
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // The UBO is used in the vertex shader
+        uboLayoutBinding.pImmutableSamplers = nullptr;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 1;
+        layoutInfo.pBindings = &uboLayoutBinding;
+
+        if (vkCreateDescriptorSetLayout(device_->getDevice(), &layoutInfo, nullptr, &descriptorSetLayout_) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor set layout!");
+        }
+    }
+
+    void HelloTriangleApp::createDescriptorPool() {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSize.descriptorCount = static_cast<uint32_t>(getMaxFramesInFlight());
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.maxSets = static_cast<uint32_t>(getMaxFramesInFlight());
+
+        if (vkCreateDescriptorPool(device_->getDevice(), &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor pool!");
+        }
+    }
+
+    void HelloTriangleApp::createDescriptorSets() {
+        std::vector<VkDescriptorSetLayout> layouts(getMaxFramesInFlight(), descriptorSetLayout_);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool_;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(getMaxFramesInFlight());
+        allocInfo.pSetLayouts = layouts.data();
+
+        descriptorSets_.resize(getMaxFramesInFlight());
+        if (vkAllocateDescriptorSets(device_->getDevice(), &allocInfo, descriptorSets_.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
+
+        for (size_t i = 0; i < getMaxFramesInFlight(); i++) {
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = uniformBuffers_[i]->getHandle();
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = descriptorSets_[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+
+            vkUpdateDescriptorSets(device_->getDevice(), 1, &descriptorWrite, 0, nullptr);
+        }
+    }
+
+    void HelloTriangleApp::updateUniformBuffer(uint32_t currentImage) {
+        UniformBufferObject ubo{};
+
+        // Get the model matrix from the scene node
+        if (rootNode_ && rootNode_->getChildCount() > 0) {
+            ubo.model = rootNode_->getChild(0)->getWorldMatrix();
+        }
+
+        // Get the view and projection matrices from the camera
+        ubo.view = camera_->getViewMatrix();
+        ubo.proj = camera_->getProjectionMatrix();
+
+        // Copy the data into the buffer
+        uniformBuffers_[currentImage]->copyData(&ubo, sizeof(ubo));
     }
     
 } // namespace vkeng
