@@ -16,40 +16,29 @@ Mesh::Mesh(std::shared_ptr<MemoryManager> memoryManager,
 void Mesh::createVertexBuffers(const std::vector<Vertex>& vertices) {
     VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-    // Create a temporary staging buffer
-    auto stagingBufferResult = m_memoryManager->createStagingBuffer(bufferSize);
-    if (!stagingBufferResult) {
-        throw std::runtime_error("Failed to create staging buffer for mesh!");
-    }
-    auto stagingBuffer = stagingBufferResult.getValue();
-
-    // Copy data to the staging buffer
-    stagingBuffer->copyData(vertices.data(), bufferSize);
-
-    // Create the final, device-local vertex buffer
-    auto vertexBufferResult = m_memoryManager->createVertexBuffer(bufferSize);
+    // The FIX is to create the vertex buffer as host-visible for now.
+    // This allows us to directly copy data to it without a separate GPU command.
+    auto vertexBufferResult = m_memoryManager->createVertexBuffer(bufferSize, true /* hostVisible */);
     if (!vertexBufferResult) {
         throw std::runtime_error("Failed to create vertex buffer for mesh!");
     }
     m_vertexBuffer = vertexBufferResult.getValue();
 
-    // Copy from staging to the vertex buffer (TODO: This needs a real command buffer submission)
-    // For now, we are cheating and creating the vertex buffer as host-visible for simplicity.
-    // A proper implementation uses a single-time command buffer to copy.
-    // We will address this in a later refactoring phase.
+    // This upload will now succeed because the buffer is host-visible.
     m_memoryManager->uploadToBuffer(m_vertexBuffer, vertices.data(), bufferSize);
 }
 
 void Mesh::createIndexBuffers(const std::vector<uint32_t>& indices) {
     VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
-    auto indexBufferResult = m_memoryManager->createIndexBuffer(bufferSize);
+    // The FIX is to also create the index buffer as host-visible.
+    auto indexBufferResult = m_memoryManager->createIndexBuffer(bufferSize, true /* hostVisible */);
     if (!indexBufferResult) {
         throw std::runtime_error("Failed to create index buffer for mesh!");
     }
     m_indexBuffer = indexBufferResult.getValue();
 
-    // Similar to the vertex buffer, we are using a temporary direct upload.
+    // This upload will now succeed.
     m_memoryManager->uploadToBuffer(m_indexBuffer, indices.data(), bufferSize);
 }
 
