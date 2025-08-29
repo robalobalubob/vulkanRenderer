@@ -82,7 +82,9 @@ namespace vkeng {
      */
     void SceneNode::removeAllChildren() {
         for (auto& child : m_children) {
-            child->setParent(nullptr);
+            // Directly set the parent to null to avoid calling setParent and causing recursion.
+            child->m_parent = nullptr;
+            child->markWorldTransformDirty();
         }
         m_children.clear();
     }
