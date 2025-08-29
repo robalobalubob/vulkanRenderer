@@ -29,6 +29,7 @@ src/math/Transform.cpp
 src/rendering/Camera.cpp
 src/rendering/RenderPass.cpp
 src/rendering/Pipeline.cpp
+src/rendering/Renderer.cpp
 src/rendering/CommandPool.cpp
 src/rendering/CommandBuffer.cpp
 src/rendering/DescriptorSet.cpp
