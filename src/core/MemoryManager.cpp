@@ -6,19 +6,16 @@
 
 namespace vkeng {
 
-/**
- * This implementation demonstrates professional VMA usage:
- * 1. Proper allocator creation with optimal flags
- * 2. Memory type selection based on usage patterns
- * 3. Automatic staging buffer management
- * 4. Statistics tracking for debugging
- * 5. Error handling with detailed context
- */
-
-// ============================================================================
-// Factory Creation Method
-// ============================================================================
-
+    /**
+     * @brief Factory method to create and initialize the MemoryManager.
+     * @details This function sets up the VMA allocator, which is the core of this
+     * manager, and wraps it in a shared pointer.
+     * @param instance The Vulkan instance.
+     * @param physicalDevice The physical device.
+     * @param device The logical device.
+     * @param vulkanApiVersion The version of the Vulkan API being used.
+     * @return A Result containing the created MemoryManager or an error.
+     */
     Result<std::shared_ptr<MemoryManager>> MemoryManager::create(
         VkInstance instance,
         VkPhysicalDevice physicalDevice,
@@ -27,23 +24,21 @@ namespace vkeng {
         
         std::cout << "Creating VMA Memory Manager..." << std::endl;
         
-        // Create VMA allocator with optimal settings
         VmaAllocatorCreateInfo allocatorInfo = {};
         allocatorInfo.vulkanApiVersion = vulkanApiVersion;
         allocatorInfo.instance = instance;
         allocatorInfo.physicalDevice = physicalDevice;
         allocatorInfo.device = device;
         
-        // Enable important features for production use
-        allocatorInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;  // Track memory usage
+        // Enable VMA to fetch memory budget information from the driver.
+        allocatorInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
         
-        // Set up Vulkan function pointers
+        // Provide VMA with the necessary Vulkan function pointers.
         VmaVulkanFunctions vulkanFunctions = {};
         vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
         vulkanFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
         allocatorInfo.pVulkanFunctions = &vulkanFunctions;
         
-        // Create the allocator
         VmaAllocator allocator;
         VkResult result = vmaCreateAllocator(&allocatorInfo, &allocator);
         if (result != VK_SUCCESS) {
@@ -51,7 +46,7 @@ namespace vkeng {
                 Error("Failed to create VMA allocator", result));
         }
         
-        // Print VMA and device info
+        // Query and print memory information for debugging purposes.
         VmaAllocatorInfo allocatorInfoQuery;
         vmaGetAllocatorInfo(allocator, &allocatorInfoQuery);
         
@@ -66,16 +61,14 @@ namespace vkeng {
         }
         std::cout << "  Memory Types: " << memProps.memoryTypeCount << std::endl;
         
-        // Create MemoryManager using private constructor
         auto memoryManager = std::shared_ptr<MemoryManager>(new MemoryManager(device, allocator));
         
         return Result<std::shared_ptr<MemoryManager>>(memoryManager);
     }
 
-// ============================================================================
-// Constructor and Destructor
-// ============================================================================
-
+    /**
+     * @brief Private constructor for the MemoryManager.
+     */
     MemoryManager::MemoryManager(VkDevice device, VmaAllocator allocator)
         : m_device(device)
         , m_allocator(allocator)
@@ -84,11 +77,13 @@ namespace vkeng {
         std::cout << "MemoryManager initialized" << std::endl;
     }
 
+    /**
+     * @brief Destructor that cleans up the VMA allocator.
+     */
     MemoryManager::~MemoryManager() noexcept {
         if (m_allocator != VK_NULL_HANDLE) {
             std::cout << "Destroying VMA allocator..." << std::endl;
             
-            // Print final statistics
             if (m_debugMode) {
                 printMemoryUsage();
             }
@@ -98,10 +93,11 @@ namespace vkeng {
         }
     }
 
-// ============================================================================
-// Buffer Creation (High-Level Interface)
-// ============================================================================
-
+    /**
+     * @brief Generic buffer creation method.
+     * @details This is the low-level entry point for creating any type of buffer.
+     * It calls the static `create` method of the Buffer class.
+     */
     Result<std::shared_ptr<Buffer>> MemoryManager::createBuffer(const BufferCreateInfo& createInfo) {
         auto buffer = Buffer::create(m_device, m_allocator, createInfo);
         
@@ -117,6 +113,9 @@ namespace vkeng {
         return buffer;
     }
 
+    /**
+     * @brief Convenience method for creating a vertex buffer.
+     */
     Result<std::shared_ptr<Buffer>> MemoryManager::createVertexBuffer(VkDeviceSize size, bool hostVisible) {
         BufferCreateInfo createInfo;
         createInfo.size = size;
@@ -127,6 +126,9 @@ namespace vkeng {
         return createBuffer(createInfo);
     }
 
+    /**
+     * @brief Convenience method for creating an index buffer.
+     */
     Result<std::shared_ptr<Buffer>> MemoryManager::createIndexBuffer(VkDeviceSize size, bool hostVisible) {
         BufferCreateInfo createInfo;
         createInfo.size = size;
@@ -137,16 +139,24 @@ namespace vkeng {
         return createBuffer(createInfo);
     }
 
+    /**
+     * @brief Convenience method for creating a uniform buffer.
+     * @details Uniform buffers are always created as host-visible for frequent updates.
+     */
     Result<std::shared_ptr<Buffer>> MemoryManager::createUniformBuffer(VkDeviceSize size) {
         BufferCreateInfo createInfo;
         createInfo.size = size;
         createInfo.usage = BufferUsage::Uniform;
-        createInfo.hostVisible = true;  // Uniform buffers are typically host-visible for frequent updates
+        createInfo.hostVisible = true;
         createInfo.debugName = "UniformBuffer_" + std::to_string(size);
         
         return createBuffer(createInfo);
     }
 
+    /**
+     * @brief Convenience method for creating a staging buffer.
+     * @details Staging buffers are always host-visible and used for transferring data.
+     */
     Result<std::shared_ptr<Buffer>> MemoryManager::createStagingBuffer(VkDeviceSize size) {
         BufferCreateInfo createInfo;
         createInfo.size = size;
@@ -157,6 +167,9 @@ namespace vkeng {
         return createBuffer(createInfo);
     }
 
+    /**
+     * @brief Convenience method for creating a storage buffer.
+     */
     Result<std::shared_ptr<Buffer>> MemoryManager::createStorageBuffer(VkDeviceSize size, bool hostVisible) {
         BufferCreateInfo createInfo;
         createInfo.size = size;
@@ -167,10 +180,9 @@ namespace vkeng {
         return createBuffer(createInfo);
     }
 
-// ============================================================================
-// Image Creation
-// ============================================================================
-
+    /**
+     * @brief Generic image creation method.
+     */
     Result<std::shared_ptr<Image>> MemoryManager::createImage(
         uint32_t width, uint32_t height,
         VkFormat format,
@@ -180,8 +192,8 @@ namespace vkeng {
         auto image = Image::create(m_device, m_allocator, width, height, format, usage, hostVisible);
         
         if (image) {
-            // Estimate image size for statistics
-            VkDeviceSize imageSize = width * height * 4;  // Rough estimate
+            // A rough estimate for image size, as actual size depends on format and tiling.
+            VkDeviceSize imageSize = width * height * 4;
             updateStats(imageSize, true, false);
             
             if (m_debugMode) {
@@ -193,6 +205,9 @@ namespace vkeng {
         return image;
     }
 
+    /**
+     * @brief Convenience method for creating a 2D texture.
+     */
     Result<std::shared_ptr<Image>> MemoryManager::createTexture2D(
         uint32_t width, uint32_t height, VkFormat format) {
         
@@ -200,6 +215,9 @@ namespace vkeng {
                         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     }
 
+    /**
+     * @brief Convenience method for creating a render target image.
+     */
     Result<std::shared_ptr<Image>> MemoryManager::createRenderTarget(
         uint32_t width, uint32_t height, VkFormat format) {
         
@@ -207,6 +225,9 @@ namespace vkeng {
                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     }
 
+    /**
+     * @brief Convenience method for creating a depth buffer image.
+     */
     Result<std::shared_ptr<Image>> MemoryManager::createDepthBuffer(
         uint32_t width, uint32_t height, VkFormat format) {
         
@@ -214,26 +235,27 @@ namespace vkeng {
                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
     }
 
-// ============================================================================
-// Data Transfer Operations
-// ============================================================================
-
+    /**
+     * @brief Internal helper to create a staging buffer.
+     */
     Result<std::shared_ptr<Buffer>> MemoryManager::createStagingBufferInternal(VkDeviceSize size) {
         return createStagingBuffer(size);
     }
 
+    /**
+     * @brief Executes a transfer operation using a command buffer.
+     * @note This is a placeholder for a future, more integrated command buffer system.
+     */
     Result<void> MemoryManager::executeTransfer(std::function<void(VkCommandBuffer)> transferFunction) {
-        // TODO: This will be implemented when CommandBuffer system is integrated
-        // For now, return an error indicating this feature is not yet available
-        
+        // TODO: This will be implemented when CommandBuffer system is integrated.
         std::cout << "Transfer operation requested - Command buffer integration needed" << std::endl;
-        std::cout << "  This will be implemented in the next phase when CommandBuffer is integrated" << std::endl;
         
-        // For host-visible buffers, transfers work immediately
-        // For device-local buffers, you'll need to implement command buffer recording
         return Result<void>(Error("Command buffer transfers not yet implemented - use host-visible buffers for now"));
     }
 
+    /**
+     * @brief Uploads data to a buffer, using a staging buffer if necessary.
+     */
     Result<void> MemoryManager::uploadToBuffer(
         std::shared_ptr<Buffer> dstBuffer,
         const void* data,
@@ -245,7 +267,7 @@ namespace vkeng {
         }
         
         if (dstBuffer->isHostVisible()) {
-            // Direct copy for host-visible buffers
+            // For host-visible buffers, we can map and copy directly.
             try {
                 dstBuffer->copyData(data, size, offset);
                 return Result<void>();
@@ -253,7 +275,7 @@ namespace vkeng {
                 return Result<void>(Error("Failed to copy data to host-visible buffer: " + std::string(e.what())));
             }
         } else {
-            // Use staging buffer for device-local buffers
+            // For device-local buffers, we must use a staging buffer.
             auto stagingBufferResult = createStagingBufferInternal(size);
             if (!stagingBufferResult) {
                 return Result<void>(stagingBufferResult.getError());
@@ -261,14 +283,13 @@ namespace vkeng {
             
             auto stagingBuffer = stagingBufferResult.getValue();
             
-            // Copy to staging buffer
             try {
                 stagingBuffer->copyData(data, size, 0);
             } catch (const std::exception& e) {
                 return Result<void>(Error("Failed to copy data to staging buffer: " + std::string(e.what())));
             }
             
-            // Execute transfer (requires command buffer - will implement later)
+            // This part requires a command buffer to perform the GPU-side copy.
             return executeTransfer([=](VkCommandBuffer cmdBuffer) {
                 VkBufferCopy copyRegion = {};
                 copyRegion.srcOffset = 0;
@@ -281,6 +302,9 @@ namespace vkeng {
         }
     }
 
+    /**
+     * @brief Uploads data to an image, using a staging buffer.
+     */
     Result<void> MemoryManager::uploadToImage(
         std::shared_ptr<Image> dstImage,
         const void* data,
@@ -291,7 +315,6 @@ namespace vkeng {
             return Result<void>(Error("Destination image is null"));
         }
         
-        // Create staging buffer
         auto stagingBufferResult = createStagingBufferInternal(size);
         if (!stagingBufferResult) {
             return Result<void>(stagingBufferResult.getError());
@@ -299,14 +322,13 @@ namespace vkeng {
         
         auto stagingBuffer = stagingBufferResult.getValue();
         
-        // Copy to staging buffer
         try {
             stagingBuffer->copyData(data, size, 0);
         } catch (const std::exception& e) {
             return Result<void>(Error("Failed to copy data to staging buffer: " + std::string(e.what())));
         }
         
-        // Execute transfer (requires command buffer - will implement later)
+        // This part requires a command buffer to copy from the buffer to the image.
         return executeTransfer([=](VkCommandBuffer cmdBuffer) {
             VkBufferImageCopy copyRegion = {};
             copyRegion.bufferOffset = 0;
@@ -325,45 +347,43 @@ namespace vkeng {
         });
     }
 
-// ============================================================================
-// Memory Statistics and Debugging
-// ============================================================================
-
+    /**
+     * @brief Internal method to update memory usage statistics.
+     */
     void MemoryManager::updateStats(VkDeviceSize size, bool isAllocation, bool isBuffer) {
         std::lock_guard<std::mutex> lock(m_statsMutex);
         
         if (isAllocation) {
             m_stats.totalAllocated += size;
             m_stats.allocationCount++;
-            
-            if (isBuffer) {
-                m_stats.bufferCount++;
-            } else {
-                m_stats.imageCount++;
-            }
+            if (isBuffer) m_stats.bufferCount++; else m_stats.imageCount++;
         } else {
             m_stats.totalAllocated -= size;
             m_stats.allocationCount--;
-            
-            if (isBuffer) {
-                m_stats.bufferCount--;
-            } else {
-                m_stats.imageCount--;
-            }
+            if (isBuffer) m_stats.bufferCount--; else m_stats.imageCount--;
         }
     }
 
+    /**
+     * @brief Gets the current memory usage statistics.
+     */
     MemoryManager::MemoryStats MemoryManager::getMemoryStats() const {
         std::lock_guard<std::mutex> lock(m_statsMutex);
         return m_stats;
     }
 
+    /**
+     * @brief Gets detailed statistics directly from the VMA allocator.
+     */
     VmaTotalStatistics MemoryManager::getDetailedStats() const {
         VmaTotalStatistics vmaStats;
         vmaCalculateStatistics(m_allocator, &vmaStats);
         return vmaStats;
     }
 
+    /**
+     * @brief Uses VMA to check for memory corruption.
+     */
     Result<void> MemoryManager::checkCorruption() {
         VkResult result = vmaCheckCorruption(m_allocator, UINT32_MAX);
         if (result == VK_SUCCESS) {
@@ -373,6 +393,9 @@ namespace vkeng {
         }
     }
 
+    /**
+     * @brief Prints a formatted summary of memory usage statistics to the console.
+     */
     void MemoryManager::printMemoryUsage() const {
         auto stats = getMemoryStats();
         auto detailedStats = getDetailedStats();
@@ -399,12 +422,11 @@ namespace vkeng {
         std::cout << "================================\n" << std::endl;
     }
 
-// ============================================================================
-// Memory Utilities Namespace
-// ============================================================================
-
     namespace MemoryUtils {
 
+        /**
+         * @brief Formats a byte size into a human-readable string (KB, MB, GB).
+         */
         std::string formatMemorySize(VkDeviceSize bytes) {
             std::ostringstream oss;
             
@@ -421,6 +443,9 @@ namespace vkeng {
             return oss.str();
         }
 
+        /**
+         * @brief Gets the optimal Vulkan buffer usage flags for a given abstract usage type.
+         */
         VkBufferUsageFlags getOptimalBufferUsage(BufferUsage usage) {
             switch (usage) {
                 case BufferUsage::Vertex:
@@ -440,6 +465,9 @@ namespace vkeng {
             }
         }
 
+        /**
+         * @brief Gets the optimal Vulkan image usage flags for a given purpose.
+         */
         VkImageUsageFlags getOptimalImageUsage(const std::string& purpose) {
             if (purpose == "texture") {
                 return VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -452,8 +480,11 @@ namespace vkeng {
             }
         }
 
+        /**
+         * @brief Calculates the required alignment for a buffer based on its usage.
+         * @note This is a simplified example; real alignment depends on hardware properties.
+         */
         VkDeviceSize calculateBufferAlignment(VkDeviceSize size, BufferUsage usage) {
-            // Different buffer types have different alignment requirements
             switch (usage) {
                 case BufferUsage::Uniform:
                     return 256;  // Common uniform buffer alignment

@@ -5,10 +5,16 @@
 #include <vulkan/vulkan_core.h>
 
 namespace vkeng {
+    /**
+     * @brief Constructs the graphics pipeline.
+     * @details This constructor configures the entire graphics pipeline state,
+     * including shader stages, vertex input, rasterization, and color blending.
+     */
     Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkExtent2D extent, VkDescriptorSetLayout descriptorSetLayout,
                        const std::filesystem::path& vertPath, const std::filesystem::path& fragPath)
         : device_(device) {
         
+        // --- 1. Load Shader Modules ---
         auto vertShaderCode = readFile(vertPath);
         auto fragShaderCode = readFile(fragPath);
 
@@ -19,7 +25,7 @@ namespace vkeng {
         vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
         vertShaderStageInfo.module = vertShaderModule;
-        vertShaderStageInfo.pName = "main";
+        vertShaderStageInfo.pName = "main"; // Entry point function
 
         VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
         fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -29,6 +35,8 @@ namespace vkeng {
 
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
+        // --- 2. Vertex Input State ---
+        // Describes how vertex data is passed to the vertex shader.
         auto bindingDescription = Vertex::getBindingDescription();
         auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
@@ -39,11 +47,14 @@ namespace vkeng {
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
         vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
+        // --- 3. Input Assembly State ---
+        // Describes the primitive topology (e.g., triangles, lines).
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         inputAssembly.primitiveRestartEnable = VK_FALSE;
 
+        // --- 4. Viewport and Scissor State ---
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
@@ -63,6 +74,8 @@ namespace vkeng {
         viewportState.scissorCount = 1;
         viewportState.pScissors = &scissor;
 
+        // --- 5. Rasterization State ---
+        // Configures how geometry is turned into fragments.
         VkPipelineRasterizationStateCreateInfo rasterizer{};
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.depthClampEnable = VK_FALSE;
@@ -70,14 +83,18 @@ namespace vkeng {
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
         rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // Use counter-clockwise front face
+        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
 
+        // --- 6. Multisample State ---
+        // Configures anti-aliasing.
         VkPipelineMultisampleStateCreateInfo multisampling{};
         multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisampling.sampleShadingEnable = VK_FALSE;
         multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
+        // --- 7. Color Blend State ---
+        // Configures how fragment shader output is blended with the framebuffer.
         VkPipelineColorBlendAttachmentState colorBlendAttachment{};
         colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | 
                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -86,14 +103,11 @@ namespace vkeng {
         VkPipelineColorBlendStateCreateInfo colorBlending{};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlending.logicOpEnable = VK_FALSE;
-        colorBlending.logicOp = VK_LOGIC_OP_COPY;
         colorBlending.attachmentCount = 1;
         colorBlending.pAttachments = &colorBlendAttachment;
-        colorBlending.blendConstants[0] = 0.0f;
-        colorBlending.blendConstants[1] = 0.0f;
-        colorBlending.blendConstants[2] = 0.0f;
-        colorBlending.blendConstants[3] = 0.0f;
 
+        // --- 8. Pipeline Layout ---
+        // Defines the interface between shader stages (e.g., descriptor sets).
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 1;
@@ -104,6 +118,7 @@ namespace vkeng {
             throw std::runtime_error("Failed to create pipeline layout!");
         }
 
+        // --- 9. Create the Graphics Pipeline ---
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.stageCount = 2;
@@ -123,10 +138,14 @@ namespace vkeng {
             throw std::runtime_error("Failed to create graphics pipeline!");
         }
 
+        // Shader modules can be destroyed after the pipeline is created.
         vkDestroyShaderModule(device_, fragShaderModule, nullptr);
         vkDestroyShaderModule(device_, vertShaderModule, nullptr);
     }
 
+    /**
+     * @brief Destroys the pipeline and its layout.
+     */
     Pipeline::~Pipeline() noexcept {
         if (pipeline_ != VK_NULL_HANDLE) {
             vkDestroyPipeline(device_, pipeline_, nullptr);
@@ -136,6 +155,11 @@ namespace vkeng {
         }
     }
 
+    /**
+     * @brief Creates a shader module from SPIR-V bytecode.
+     * @param code The vector of chars containing the SPIR-V code.
+     * @return The created VkShaderModule.
+     */
     VkShaderModule Pipeline::createShaderModule(const std::vector<char>& code) const {
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -150,6 +174,11 @@ namespace vkeng {
         return shaderModule;
     }
 
+    /**
+     * @brief Reads a binary file from disk.
+     * @param filename The path to the file.
+     * @return A vector of chars containing the file's contents.
+     */
     std::vector<char> Pipeline::readFile(const std::filesystem::path& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
@@ -162,9 +191,8 @@ namespace vkeng {
 
         file.seekg(0);
         file.read(buffer.data(), fileSize);
-
         file.close();
 
         return buffer;
     }
-}
+} // namespace vkeng

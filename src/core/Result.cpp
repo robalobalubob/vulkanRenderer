@@ -2,18 +2,30 @@
 
 namespace vkeng {
 
-    // Error implementation
+    // ============================================================================
+    // Error Implementation
+    // ============================================================================
+
+    /**
+     * @brief Constructs an Error with a simple message.
+     */
     Error::Error(const std::string& msg) : message(msg), vkResult(std::nullopt) {}
 
+    /**
+     * @brief Constructs an Error with a message and an associated Vulkan result code.
+     */
     Error::Error(const std::string& msg, VkResult result) 
         : message(msg), vkResult(result) {
         
-        // Enhance error message with Vulkan result
         if (result != VK_SUCCESS) {
             message += " (VkResult: " + std::to_string(static_cast<int>(result)) + ")";
         }
     }
 
+    /**
+     * @brief Converts the stored VkResult enum to a human-readable string.
+     * @return A string representation of the Vulkan error.
+     */
     std::string Error::getVulkanErrorString() const {
         if (!vkResult.has_value()) return "No Vulkan error";
         
@@ -41,7 +53,16 @@ namespace vkeng {
         }
     }
 
-    // Helper functions for common Vulkan result patterns
+    // ============================================================================
+    // Helper Functions
+    // ============================================================================
+
+    /**
+     * @brief Checks a VkResult and returns a void Result.
+     * @param result The Vulkan result code to check.
+     * @param operation A description of the operation that was performed.
+     * @return A successful Result<void> or a Result containing an Error.
+     */
     Result<void> checkVkResult(VkResult result, const std::string& operation) {
         if (result == VK_SUCCESS) {
             return Result<void>();
@@ -50,6 +71,14 @@ namespace vkeng {
         }
     }
 
+    /**
+     * @brief Wraps a Vulkan operation that returns a value into a Result.
+     * @tparam T The type of the value returned on success.
+     * @param result The Vulkan result code to check.
+     * @param value The value to wrap in the Result if successful.
+     * @param operation A description of the operation that was performed.
+     * @return A Result containing the value or an Error.
+     */
     template<typename T>
     Result<T> wrapVkResult(VkResult result, const T& value, const std::string& operation) {
         if (result == VK_SUCCESS) {

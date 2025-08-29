@@ -6,23 +6,70 @@
 #include <vulkan/vk_platform.h>
 
 namespace vkeng {
+
+    // ============================================================================
+    // Debug Callback
+    // ============================================================================
+
+    /**
+     * @brief The debug callback function that gets called by the validation layers.
+     * @param messageSeverity The severity of the message.
+     * @param messageType The type of the message.
+     * @param pCallbackData A struct containing the details of the message itself.
+     * @param pUserData User data passed to the callback.
+     * @return A boolean indicating if the Vulkan call that triggered the validation
+     * message should be aborted. This should always be VK_FALSE.
+     */
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
         void* pUserData) {
         
+        // Log warnings and errors to the standard error stream.
         if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
             std::cerr << "Validation Layer: " << pCallbackData->pMessage << std::endl;
         }
         return VK_FALSE;
     }
 
+    // ============================================================================
+    // Constructor & Destructor
+    // ============================================================================
+
+    /**
+     * @brief Constructs the VulkanInstance, creating the instance and setting up the debug messenger.
+     */
     VulkanInstance::VulkanInstance(const std::vector<const char*>& requiredExtensions) {
         createInstance(requiredExtensions);
         setupDebugMessenger();
     }
 
+    /**
+     * @brief Destroys the debug messenger and the Vulkan instance.
+     */
+    VulkanInstance::~VulkanInstance() noexcept {
+        if (debugMessenger_ != VK_NULL_HANDLE) {
+            auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)
+                vkGetInstanceProcAddr(instance_, "vkDestroyDebugUtilsMessengerEXT");
+            if (func != nullptr) {
+                func(instance_, debugMessenger_, nullptr);
+            }
+        }
+        if (instance_ != VK_NULL_HANDLE) {
+            vkDestroyInstance(instance_, nullptr);
+        }
+    }
+
+    // ============================================================================
+    // Private Methods
+    // ============================================================================
+
+    /**
+     * @brief Creates the core Vulkan instance.
+     * @details Configures application info, required extensions, and validation layers before
+     * calling vkCreateInstance.
+     */
     void VulkanInstance::createInstance(const std::vector<const char*>& requiredExtensions) {
         if (enableValidationLayers && !checkValidationLayerSupport()) {
             throw std::runtime_error("Validation layers requested, but not available!");
@@ -53,9 +100,9 @@ namespace vkeng {
             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
             createInfo.ppEnabledLayerNames = validationLayers.data();
             
-            // Set up debug messenger for instance creation/destruction
+            // This allows debugging messages during instance creation and destruction.
             populateDebugMessengerCreateInfo(debugCreateInfo);
-            createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*) &debugCreateInfo;
+            createInfo.pNext = &debugCreateInfo;
         } else {
             createInfo.enabledLayerCount = 0;
             createInfo.pNext = nullptr;
@@ -66,6 +113,10 @@ namespace vkeng {
         }
     }
 
+    /**
+     * @brief Checks if all requested validation layers are supported by the instance.
+     * @return True if all layers are supported, false otherwise.
+     */
     bool VulkanInstance::checkValidationLayerSupport() {
         uint32_t layerCount;
         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -73,10 +124,8 @@ namespace vkeng {
         std::vector<VkLayerProperties> availableLayers(layerCount);
         vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
         
-        // Check if all requested validation layers are available
         for (const char* layerName : validationLayers) {
             bool layerFound = false;
-            
             for (const auto& layerProperties : availableLayers) {
                 if (strcmp(layerName, layerProperties.layerName) == 0) {
                     layerFound = true;
@@ -92,6 +141,9 @@ namespace vkeng {
         return true;
     }
 
+    /**
+     * @brief Creates and registers the debug messenger callback.
+     */
     void VulkanInstance::setupDebugMessenger() {
         if (!enableValidationLayers) return;
 
@@ -107,6 +159,11 @@ namespace vkeng {
             }
         }
     }
+
+    /**
+     * @brief Populates a VkDebugUtilsMessengerCreateInfoEXT struct with our desired settings.
+     * @param createInfo The struct to populate.
+     */
     void VulkanInstance::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
         createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -119,13 +176,4 @@ namespace vkeng {
         createInfo.pfnUserCallback = debugCallback;
     }
 
-    VulkanInstance::~VulkanInstance() noexcept {
-        if (debugMessenger_ != VK_NULL_HANDLE) {
-        auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)
-            vkGetInstanceProcAddr(instance_, "vkDestroyDebugUtilsMessengerEXT");
-        func(instance_, debugMessenger_, nullptr);
-        }
-        if (instance_ != VK_NULL_HANDLE)
-            vkDestroyInstance(instance_, nullptr);
-    }
-}
+} // namespace vkeng

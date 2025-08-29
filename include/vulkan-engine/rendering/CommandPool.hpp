@@ -46,13 +46,24 @@ namespace vkeng {
         CommandPool(CommandPool&&) noexcept = default;
         CommandPool& operator=(CommandPool&&) noexcept = default;
 
+        /**
+         * @brief Begins a command buffer for a single, one-time submission.
+         * @return A handle to the begun command buffer.
+         */
         VkCommandBuffer beginSingleTimeCommands();
+        
+        /**
+         * @brief Ends, submits, and frees a single-time command buffer.
+         * @param commandBuffer The command buffer to process.
+         * @param queue The queue to submit the commands to.
+         */
         void endSingleTimeCommands(VkCommandBuffer commandBuffer, VkQueue queue);
 
+        /** @brief Gets the raw Vulkan command pool handle. */
         VkCommandPool getPool() const { return commandPool_; }
 
         private:
-        VkDevice device_{VK_NULL_HANDLE};
-        VkCommandPool commandPool_{VK_NULL_HANDLE};
+        VkDevice device_{VK_NULL_HANDLE};       ///< The logical device.
+        VkCommandPool commandPool_{VK_NULL_HANDLE}; ///< The Vulkan command pool object.
     };
 } // namespace vkeng

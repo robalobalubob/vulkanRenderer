@@ -62,24 +62,31 @@ namespace vkeng {
         VulkanSwapChain(VulkanSwapChain&&) noexcept = default;
         VulkanSwapChain& operator=(VulkanSwapChain&&) noexcept = default;
 
+        /** @brief Gets the image format of the swap chain. */
         VkFormat imageFormat() const { return format_; }
+        /** @brief Gets the extent (resolution) of the swap chain images. */
         VkExtent2D extent() const { return extent_; }
+        /** @brief Gets the image views for the swap chain images. */
         const std::vector<VkImageView>& imageViews() const { return imageViews_; }
+        /** @brief Gets the raw Vulkan swap chain handle. */
         VkSwapchainKHR swapChain() const { return swapChain_; }
 
         private:
+        /** @brief Queries the physical device for swap chain support details. */
         void querySupport(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
+        /** @brief Creates the Vulkan swap chain object. */
         void createSwapChain();
+        /** @brief Creates image views for each image in the swap chain. */
         void createImageViews();
 
-        VkDevice device_{VK_NULL_HANDLE};
-        VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE};
-        VkSurfaceKHR surface_{VK_NULL_HANDLE};
-        VkSwapchainKHR swapChain_{VK_NULL_HANDLE};
-        std::vector<VkImage> images_;
-        std::vector<VkImageView> imageViews_;
-        VkFormat format_{};
-        VkExtent2D extent_{};
-        SwapChainSupportDetails support_{};
+        VkDevice device_{VK_NULL_HANDLE};                   ///< Logical device for cleanup.
+        VkPhysicalDevice physicalDevice_{VK_NULL_HANDLE}; ///< Physical device handle.
+        VkSurfaceKHR surface_{VK_NULL_HANDLE};             ///< The surface the swap chain is tied to.
+        VkSwapchainKHR swapChain_{VK_NULL_HANDLE};         ///< The Vulkan swap chain object.
+        std::vector<VkImage> images_;                      ///< The images owned by the swap chain.
+        std::vector<VkImageView> imageViews_;              ///< The image views for the swap chain images.
+        VkFormat format_{};                                ///< The format of the swap chain images.
+        VkExtent2D extent_{};                              ///< The extent (resolution) of the swap chain images.
+        SwapChainSupportDetails support_{};                ///< The swap chain support details for the physical device.
     };
 } // namespace vkeng

@@ -5,20 +5,15 @@
 
 namespace vkeng {
 
-/**
- * Vulkan gives us explicit control over GPU memory
- * We use VMA (Vulkan Memory Allocator) to simplify this process
- * 
- * Key concepts:
- * - Device Local Memory: Fast GPU memory, not accessible from CPU
- * - Host Visible Memory: CPU-accessible, slower for GPU
- * - Staging Buffers: CPU→GPU transfer mechanism
- */
+    // ============================================================================
+    // Helper Functions
+    // ============================================================================
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
+    /**
+     * @brief Converts the engine's abstract BufferUsage enum to Vulkan's bitmask flags.
+     * @param usage The abstract buffer usage.
+     * @return The corresponding VkBufferUsageFlags.
+     */
     VkBufferUsageFlags convertBufferUsage(BufferUsage usage) {
         switch (usage) {
             case BufferUsage::Vertex:
@@ -38,20 +33,29 @@ namespace vkeng {
         }
     }
 
+    /**
+     * @brief Determines the optimal VMA memory usage based on buffer type and visibility.
+     * @param usage The abstract buffer usage.
+     * @param hostVisible Whether the buffer should be CPU-accessible.
+     * @return The appropriate VmaMemoryUsage flag.
+     */
     VmaMemoryUsage getVmaMemoryUsage(BufferUsage usage, bool hostVisible) {
         if (hostVisible) {
-            // CPU-accessible memory for staging or uniform buffers that update frequently
+            // CPU-accessible memory for staging or uniform buffers that update frequently.
             return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
         } else {
-            // GPU-only memory for best performance
+            // GPU-only memory for best performance.
             return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         }
     }
 
-// ============================================================================
-// Buffer Implementation
-// ============================================================================
+    // ============================================================================
+    // Buffer Implementation
+    // ============================================================================
 
+    /**
+     * @brief Private constructor for the Buffer class.
+     */
     Buffer::Buffer(VkDevice device, VmaAllocator allocator, VkBuffer buffer, 
                 VmaAllocation allocation, VkDeviceSize size, bool hostVisible)
         : m_device(device)
@@ -63,31 +67,30 @@ namespace vkeng {
         , m_mappedData(nullptr) {
     }
 
+    /**
+     * @brief Factory method to create and allocate a new Buffer.
+     */
     Result<std::shared_ptr<Buffer>> Buffer::create(VkDevice device, VmaAllocator allocator, 
                                         const BufferCreateInfo& createInfo) {
         
-        // Convert our usage enum to Vulkan flags
         VkBufferUsageFlags usageFlags = convertBufferUsage(createInfo.usage);
         VmaMemoryUsage memoryUsage = getVmaMemoryUsage(createInfo.usage, createInfo.hostVisible);
         
-        // Create buffer info
         VkBufferCreateInfo bufferInfo = {};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = createInfo.size;
         bufferInfo.usage = usageFlags;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;  // Used by one queue family
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         
-        // Create allocation info
         VmaAllocationCreateInfo allocInfo = {};
         allocInfo.usage = memoryUsage;
         
-        // For host-visible buffers, we want them mapped and coherent
+        // For host-visible buffers, we want them to be persistently mapped for convenience.
         if (createInfo.hostVisible) {
             allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
                             VMA_ALLOCATION_CREATE_MAPPED_BIT;
         }
         
-        // Create the buffer and allocation
         VkBuffer buffer;
         VmaAllocation allocation;
         VmaAllocationInfo allocationInfo;
@@ -100,20 +103,17 @@ namespace vkeng {
                 Error("Failed to create buffer", result));
         }
         
-        // Create our Buffer object using private constructor
         auto bufferObj = std::shared_ptr<Buffer>(new Buffer(device, allocator, buffer, 
                                                             allocation, createInfo.size, 
                                                             createInfo.hostVisible));
         
-        // If it was created as mapped, store the mapped pointer
+        // If the buffer was created with the mapped flag, VMA provides the pointer.
         if (createInfo.hostVisible && allocationInfo.pMappedData) {
             bufferObj->m_mappedData = allocationInfo.pMappedData;
         }
         
-        // Set debug name if provided and if we have debug utils
         if (!createInfo.debugName.empty()) {
-            // TODO: Add debug naming when we have debug utils extension
-            // This would help with debugging in RenderDoc/validation layers
+            // TODO: Add debug naming when a debug utils extension is available.
         }
         
         std::cout << "Created buffer: " << createInfo.size << " bytes, " 
@@ -122,6 +122,9 @@ namespace vkeng {
         return Result<std::shared_ptr<Buffer>>(bufferObj);
     }
 
+    /**
+     * @brief Destructor that destroys the Vulkan buffer and frees its memory via VMA.
+     */
     Buffer::~Buffer() {
         std::cout << "Destroying Buffer..." << std::endl;
 
@@ -132,7 +135,9 @@ namespace vkeng {
         }
     }
 
-    // Move constructor
+    /**
+     * @brief Move constructor.
+     */
     Buffer::Buffer(Buffer&& other) noexcept
         : m_device(other.m_device)
         , m_allocator(other.m_allocator)
@@ -142,21 +147,20 @@ namespace vkeng {
         , m_hostVisible(other.m_hostVisible)
         , m_mappedData(other.m_mappedData) {
         
-        // Reset other object
         other.m_buffer = VK_NULL_HANDLE;
         other.m_allocation = VK_NULL_HANDLE;
         other.m_mappedData = nullptr;
     }
 
-    // Move assignment
+    /**
+     * @brief Move assignment operator.
+     */
     Buffer& Buffer::operator=(Buffer&& other) noexcept {
         if (this != &other) {
-            // Clean up current resources
             if (m_buffer != VK_NULL_HANDLE) {
                 vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
             }
             
-            // Move from other
             m_device = other.m_device;
             m_allocator = other.m_allocator;
             m_buffer = other.m_buffer;
@@ -165,7 +169,6 @@ namespace vkeng {
             m_hostVisible = other.m_hostVisible;
             m_mappedData = other.m_mappedData;
             
-            // Reset other
             other.m_buffer = VK_NULL_HANDLE;
             other.m_allocation = VK_NULL_HANDLE;
             other.m_mappedData = nullptr;
@@ -173,21 +176,23 @@ namespace vkeng {
         return *this;
     }
 
-// ============================================================================
-// Data Access Methods
-// ============================================================================
+    // ============================================================================
+    // Data Access Methods
+    // ============================================================================
 
+    /**
+     * @brief Maps the buffer's memory into application address space.
+     * @return A Result containing the mapped pointer, or an error.
+     */
     Result<void*> Buffer::map() {
         if (!m_hostVisible) {
             return Result<void*>(Error("Cannot map non-host-visible buffer"));
         }
         
         if (m_mappedData) {
-            // Already mapped (persistent mapping)
             return Result<void*>(m_mappedData);
         }
         
-        // Map the memory
         VkResult result = vmaMapMemory(m_allocator, m_allocation, &m_mappedData);
         if (result != VK_SUCCESS) {
             return Result<void*>(Error("Failed to map buffer memory", result));
@@ -196,9 +201,13 @@ namespace vkeng {
         return Result<void*>(m_mappedData);
     }
 
+    /**
+     * @brief Unmaps a previously mapped buffer.
+     * @note This is often not necessary for persistently mapped buffers.
+     */
     void Buffer::unmap() {
         if (!m_hostVisible) {
-            return;  // Nothing to do for device-local buffers
+            return;
         }
         
         if (m_mappedData) {
@@ -207,6 +216,9 @@ namespace vkeng {
         }
     }
 
+    /**
+     * @brief Copies data from a CPU pointer into a host-visible buffer.
+     */
     Result<void> Buffer::copyData(const void* data, VkDeviceSize size, VkDeviceSize offset) {
         if (!m_hostVisible) {
             return Result<void>(Error("Cannot directly copy to non-host-visible buffer. Use staging buffer."));
@@ -216,29 +228,27 @@ namespace vkeng {
             return Result<void>(Error("Copy size exceeds buffer size"));
         }
         
-        // Map if not already mapped
         auto mapResult = map();
         if (!mapResult) {
             return Result<void>(mapResult.getError());
         }
         void* mappedData = mapResult.getValue();
         
-        // Copy the data
         std::memcpy(static_cast<char*>(mappedData) + offset, data, size);
         
-        // For non-coherent memory, we would need to flush here
-        // VMA handles this automatically for AUTO memory usage
-        
-        // Note: We don't unmap here because the buffer might be persistently mapped
-        // The destructor will handle cleanup
+        // For non-coherent memory, a flush would be needed here. VMA_MEMORY_USAGE_AUTO
+        // prefers coherent types, so this is often not required.
         
         return Result<void>();
     }
 
-// ============================================================================
-// Image Implementation
-// ============================================================================
+    // ============================================================================
+    // Image Implementation
+    // ============================================================================
 
+    /**
+     * @brief Private constructor for the Image class.
+     */
     Image::Image(VkDevice device, VmaAllocator allocator, VkImage image, 
                 VmaAllocation allocation, VkImageView imageView,
                 uint32_t width, uint32_t height, VkFormat format)
@@ -252,38 +262,31 @@ namespace vkeng {
         , m_format(format) {
     }
 
+    /**
+     * @brief Factory method to create and allocate a new Image and its view.
+     */
     Result<std::shared_ptr<Image>> Image::create(VkDevice device, VmaAllocator allocator,
                                         uint32_t width, uint32_t height,
                                         VkFormat format, VkImageUsageFlags usage,
                                         bool hostVisible) {
         
-        // Create image info
         VkImageCreateInfo imageInfo = {};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         imageInfo.imageType = VK_IMAGE_TYPE_2D;
         imageInfo.format = format;
-        imageInfo.extent.width = width;
-        imageInfo.extent.height = height;
-        imageInfo.extent.depth = 1;
+        imageInfo.extent = { width, height, 1 };
         imageInfo.mipLevels = 1;
         imageInfo.arrayLayers = 1;
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;  // Best performance for GPU
+        imageInfo.tiling = hostVisible ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
         imageInfo.usage = usage;
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         
-        // If host visible is requested, use linear tiling
-        if (hostVisible) {
-            imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
-        }
-        
-        // Create allocation info
         VmaAllocationCreateInfo allocInfo = {};
         allocInfo.usage = hostVisible ? VMA_MEMORY_USAGE_AUTO_PREFER_HOST : 
                                     VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         
-        // Create image and allocation
         VkImage image;
         VmaAllocation allocation;
         VkResult result = vmaCreateImage(allocator, &imageInfo, &allocInfo,
@@ -294,16 +297,11 @@ namespace vkeng {
                 Error("Failed to create image", result));
         }
         
-        // Create image view
         VkImageViewCreateInfo viewInfo = {};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = image;
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = format;
-        viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         viewInfo.subresourceRange.baseMipLevel = 0;
         viewInfo.subresourceRange.levelCount = 1;
@@ -323,6 +321,9 @@ namespace vkeng {
         return Result<std::shared_ptr<Image>>(imageObj);
     }
 
+    /**
+     * @brief Destructor that destroys the Vulkan image view, image, and frees its memory.
+     */
     Image::~Image() {
         if (m_imageView != VK_NULL_HANDLE) {
             vkDestroyImageView(m_device, m_imageView, nullptr);

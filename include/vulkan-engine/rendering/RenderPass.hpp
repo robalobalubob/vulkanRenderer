@@ -46,10 +46,11 @@ namespace vkeng {
         RenderPass(RenderPass&&) noexcept = default;
         RenderPass& operator=(RenderPass&&) noexcept = default;
     
+        /** @brief Gets the raw Vulkan render pass handle. */
         VkRenderPass get() const { return renderPass_; }
 
         private:
-        VkDevice device_{VK_NULL_HANDLE};
-        VkRenderPass renderPass_{VK_NULL_HANDLE};
+        VkDevice device_{VK_NULL_HANDLE};           ///< The logical device.
+        VkRenderPass renderPass_{VK_NULL_HANDLE}; ///< The Vulkan render pass object.
     };
 } // namespace vkeng
