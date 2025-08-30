@@ -32,6 +32,8 @@ HelloTriangleApp::~HelloTriangleApp() {
         vkDestroyDescriptorSetLayout(device_->getDevice(), descriptorSetLayout_, nullptr);
     }
 
+    swapChain_.reset();
+
     if (surface_ != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(instance_->get(), surface_, nullptr);
     }
@@ -74,7 +76,14 @@ void HelloTriangleApp::initVulkan() {
 
     createDescriptorSetLayout(device_->getDevice(), &descriptorSetLayout_);
 
-    pipeline_ = std::make_unique<Pipeline>(device_->getDevice(), renderPass_->get(), descriptorSetLayout_, swapChain_->extent(), "shaders/vert.spv", "shaders/frag.spv");
+    pipeline_ = std::make_unique<Pipeline>(
+        device_->getDevice(),
+        renderPass_->get(),
+        swapChain_->extent(),
+        descriptorSetLayout_,
+        "../shaders/vert.spv",
+        "../shaders/frag.spv"
+    );
 
     // Create Mesh and UBOs
     const std::vector<Vertex> vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};

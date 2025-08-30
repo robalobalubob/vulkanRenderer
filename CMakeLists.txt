@@ -18,6 +18,7 @@ configure_file(${CMAKE_SOURCE_DIR}/shaders/frag.spv ${CMAKE_BINARY_DIR}/shaders/
 add_executable(test_scene 
 src/main.cpp
 src/HelloTriangleApp.cpp
+src/components/MeshRenderer.cpp
 src/core/VulkanInstance.cpp
 src/core/VulkanDevice.cpp
 src/core/VulkanSwapChain.cpp

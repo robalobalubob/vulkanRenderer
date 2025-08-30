@@ -33,7 +33,7 @@ namespace vkeng {
         void createSyncObjects();
         void freeCommandBuffers();
         void recreateSwapChain();
-        void recordCommandBuffer(uint32_t imageIndex, SceneNode& scene, Camera& camera, Mesh& mesh,
+        void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& scene, Camera& camera, Mesh& mesh,
                                  const std::vector<VkDescriptorSet>& descriptorSets,
                                  const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
         void updateUniformBuffer(uint32_t currentImage, SceneNode& scene, Camera& camera,

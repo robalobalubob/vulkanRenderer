@@ -33,10 +33,12 @@ void Renderer::drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
                          const std::vector<VkDescriptorSet>& descriptorSets,
                          const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
 
+    // 1. Get the command buffer and sync objects for the CURRENT FRAME IN FLIGHT.
     FrameData& frame = m_frames[m_currentFrame];
     vkWaitForFences(m_device.getDevice(), 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
 
-    uint32_t imageIndex;
+    // 2. Acquire an available image from the swap chain.
+    uint32_t imageIndex; // This is the index of the SWAPCHAIN IMAGE, not our frame.
     VkResult result = vkAcquireNextImageKHR(m_device.getDevice(), m_swapChain.swapChain(), UINT64_MAX,
                                         frame.imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 
@@ -47,11 +49,13 @@ void Renderer::drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
+    // 3. Record commands into the command buffer for the CURRENT FRAME IN FLIGHT,
+    //    telling it to draw to the acquired SWAPCHAIN IMAGE.
     vkResetFences(m_device.getDevice(), 1, &frame.inFlightFence);
     vkResetCommandBuffer(frame.commandBuffer, 0);
+    recordCommandBuffer(frame.commandBuffer, imageIndex, scene, camera, mesh, descriptorSets, uniformBuffers);
 
-    recordCommandBuffer(imageIndex, scene, camera, mesh, descriptorSets, uniformBuffers);
-
+    // 4. Submit the command buffer for the CURRENT FRAME IN FLIGHT.
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     VkSemaphore waitSemaphores[] = {frame.imageAvailableSemaphore};
@@ -60,7 +64,7 @@ void Renderer::drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &frame.commandBuffer;
+    submitInfo.pCommandBuffers = &frame.commandBuffer; // We submit the correct buffer.
     VkSemaphore signalSemaphores[] = {frame.renderFinishedSemaphore};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
@@ -69,6 +73,7 @@ void Renderer::drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
         throw std::runtime_error("failed to submit draw command buffer!");
     }
 
+    // 5. Present the SWAPCHAIN IMAGE.
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
@@ -85,15 +90,16 @@ void Renderer::drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
         throw std::runtime_error("failed to present swap chain image!");
     }
 
+    // 6. Advance to the next FRAME IN FLIGHT.
     m_currentFrame = (m_currentFrame + 1) % m_frames.size();
 }
 
-void Renderer::recordCommandBuffer(uint32_t imageIndex, SceneNode& scene, Camera& camera, Mesh& mesh,
+void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& scene, Camera& camera, Mesh& mesh,
                                  const std::vector<VkDescriptorSet>& descriptorSets,
                                  const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
-    updateUniformBuffer(imageIndex, scene, camera, uniformBuffers);
+    // We no longer need to fetch the command buffer here; it's passed in.
 
-    VkCommandBuffer commandBuffer = m_frames[imageIndex].commandBuffer;
+    updateUniformBuffer(imageIndex, scene, camera, uniformBuffers);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -115,6 +121,7 @@ void Renderer::recordCommandBuffer(uint32_t imageIndex, SceneNode& scene, Camera
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.getPipeline());
 
     mesh.bind(commandBuffer);
+
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.getLayout(), 0, 1, &descriptorSets[imageIndex], 0, nullptr);
     vkCmdDrawIndexed(commandBuffer, mesh.getIndexCount(), 1, 0, 0, 0);
 
