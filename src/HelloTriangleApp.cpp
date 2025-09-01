@@ -4,6 +4,8 @@
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/core/InputManager.hpp"
+#include "vulkan-engine/rendering/FirstPersonCameraController.hpp"
+#include "vulkan-engine/rendering/OrbitCameraController.hpp"
 #include <stdexcept>
 
 namespace vkeng {
@@ -131,7 +133,7 @@ void HelloTriangleApp::initScene() {
     camera_->getTransform().setPosition(0.0f, 0.0f, 5.0f);
 
     // Create the controller and give it our camera to control
-    cameraController_ = std::make_unique<CameraController>(*camera_);
+    cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_);
 }
 
 void HelloTriangleApp::mainLoop() {
@@ -142,6 +144,16 @@ void HelloTriangleApp::mainLoop() {
         float currentTime = static_cast<float>(glfwGetTime());
         float deltaTime = currentTime - lastTime;
         lastTime = currentTime;
+
+        // --- Camera Controller Switching ---
+        if (InputManager::IsKeyTriggered(GLFW_KEY_C)) {
+            isOrbitController_ = !isOrbitController_;
+            if (isOrbitController_) {
+                cameraController_ = std::make_shared<OrbitCameraController>(*camera_);
+            } else {
+                cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_);
+            }
+        }
 
         cameraController_->update(deltaTime);
 

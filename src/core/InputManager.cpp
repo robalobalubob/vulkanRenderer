@@ -6,16 +6,20 @@ namespace vkeng {
 // Initialize static members
 bool InputManager::s_keys[1024] = { false };
 bool InputManager::s_lastKeys[1024] = { false };
+bool InputManager::s_mouseButtons[8] = { false };
 double InputManager::s_lastMouseX = 0.0;
 double InputManager::s_lastMouseY = 0.0;
 double InputManager::s_mouseDeltaX = 0.0;
 double InputManager::s_mouseDeltaY = 0.0;
+double InputManager::s_scrollDeltaY = 0.0;
 bool InputManager::s_firstMouse = true;
 
 void InputManager::Init(GLFWwindow* window) {
     // Set GLFW callbacks
     glfwSetKeyCallback(window, KeyCallback);
     glfwSetCursorPosCallback(window, CursorPosCallback);
+    glfwSetMouseButtonCallback(window, MouseButtonCallback);
+    glfwSetScrollCallback(window, ScrollCallback);
 
     // Capture the mouse cursor
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -29,9 +33,10 @@ void InputManager::EndFrame() {
     // At the end of a frame, copy the current key states to the last key states
     memcpy(s_lastKeys, s_keys, sizeof(s_keys));
 
-    // Also reset mouse delta so it doesn't carry over
+    // Also reset mouse and scroll deltas so they don't carry over
     s_mouseDeltaX = 0.0;
     s_mouseDeltaY = 0.0;
+    s_scrollDeltaY = 0.0;
 }
 
 bool InputManager::IsKeyPressed(int key) {
@@ -50,9 +55,20 @@ bool InputManager::IsKeyTriggered(int key) {
     return false;
 }
 
+bool InputManager::IsMouseButtonPressed(int button) {
+    if (button >= 0 && button < 8) {
+        return s_mouseButtons[button];
+    }
+    return false;
+}
+
 void InputManager::GetMouseDelta(double& x, double& y) {
     x = s_mouseDeltaX;
     y = s_mouseDeltaY;
+}
+
+void InputManager::GetScrollDelta(double& y) {
+    y = s_scrollDeltaY;
 }
 
 void InputManager::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -92,6 +108,20 @@ void InputManager::CursorPosCallback(GLFWwindow* window, double xpos, double ypo
 
     s_lastMouseX = xpos;
     s_lastMouseY = ypos;
+}
+
+void InputManager::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+    if (button >= 0 && button < 8) {
+        if (action == GLFW_PRESS) {
+            s_mouseButtons[button] = true;
+        } else if (action == GLFW_RELEASE) {
+            s_mouseButtons[button] = false;
+        }
+    }
+}
+
+void InputManager::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    s_scrollDeltaY = yoffset;
 }
 
 } // namespace vkeng

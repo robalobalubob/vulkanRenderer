@@ -29,7 +29,8 @@ src/core/MemoryManager.cpp
 src/core/Buffer.cpp
 src/math/Transform.cpp
 src/rendering/Camera.cpp
-src/rendering/CameraController.cpp
+src/rendering/FirstPersonCameraController.cpp
+src/rendering/OrbitCameraController.cpp
 src/rendering/RenderPass.cpp
 src/rendering/Pipeline.cpp
 src/rendering/Renderer.cpp

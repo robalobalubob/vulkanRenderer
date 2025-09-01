@@ -46,7 +46,8 @@ namespace vkeng {
 
         // The renderer that will handle all drawing
         std::unique_ptr<Renderer> renderer_{};
-        std::unique_ptr<CameraController> cameraController_{};
+        std::shared_ptr<CameraController> cameraController_{};
+        bool isOrbitController_ = false;
 
         // --- Scene Data ---
         std::shared_ptr<SceneNode> rootNode_{};
