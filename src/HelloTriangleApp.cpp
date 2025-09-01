@@ -145,6 +145,10 @@ void HelloTriangleApp::mainLoop() {
 
         cameraController_->update(deltaTime);
 
+        if (InputManager::IsKeyTriggered(GLFW_KEY_R)) {
+            cameraController_->reset();
+        }
+
         // Update scene logic - animate each node independently
         if (rootNode_->getChildCount() > 1) {
             auto squareNode = rootNode_->getChild(0);
@@ -157,6 +161,8 @@ void HelloTriangleApp::mainLoop() {
 
         // Draw the entire scene
         renderer_->drawFrame(*rootNode_, *camera_, descriptorSets_, uniformBuffers_);
+
+        InputManager::EndFrame();
     }
     vkDeviceWaitIdle(device_->getDevice());
 }

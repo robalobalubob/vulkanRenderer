@@ -6,8 +6,10 @@ namespace vkeng {
 class InputManager {
 public:
     static void Init(GLFWwindow* window);
+    static void EndFrame();
 
     static bool IsKeyPressed(int key);
+    static bool IsKeyTriggered(int key);
     static void GetMouseDelta(double& x, double& y);
 
     // --- Callbacks ---
@@ -16,6 +18,7 @@ public:
 
 private:
     static bool s_keys[1024];
+    static bool s_lastKeys[1024];
     static double s_lastMouseX;
     static double s_lastMouseY;
     static double s_mouseDeltaX;
