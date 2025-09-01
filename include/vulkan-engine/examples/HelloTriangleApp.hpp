@@ -3,8 +3,9 @@
 #include "vulkan-engine/core/VulkanDevice.hpp"
 #include "vulkan-engine/core/VulkanInstance.hpp"
 #include "vulkan-engine/core/VulkanSwapChain.hpp"
+#include "vulkan-engine/rendering/CameraController.hpp"
 #include "vulkan-engine/rendering/Pipeline.hpp"
-#include "vulkan-engine/rendering/Renderer.hpp" // <-- Add include
+#include "vulkan-engine/rendering/Renderer.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
 #include "vulkan-engine/core/Buffer.hpp"
@@ -45,6 +46,7 @@ namespace vkeng {
 
         // The renderer that will handle all drawing
         std::unique_ptr<Renderer> renderer_{};
+        std::unique_ptr<CameraController> cameraController_{};
 
         // --- Scene Data ---
         std::shared_ptr<SceneNode> rootNode_{};

@@ -128,7 +128,10 @@ void HelloTriangleApp::initScene() {
     rootNode_->addChild(triangleNode);
 
     camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float)swapChain_->extent().height, 0.1f, 10.0f);
-    camera_->getTransform().setPosition(0.0f, 0.0f, 5.0f); // Move camera back to see both objects
+    camera_->getTransform().setPosition(0.0f, 0.0f, 5.0f);
+
+    // Create the controller and give it our camera to control
+    cameraController_ = std::make_unique<CameraController>(*camera_);
 }
 
 void HelloTriangleApp::mainLoop() {
@@ -139,6 +142,8 @@ void HelloTriangleApp::mainLoop() {
         float currentTime = static_cast<float>(glfwGetTime());
         float deltaTime = currentTime - lastTime;
         lastTime = currentTime;
+
+        cameraController_->update(deltaTime);
 
         // Update scene logic - animate each node independently
         if (rootNode_->getChildCount() > 1) {

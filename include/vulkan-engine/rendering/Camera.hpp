@@ -226,26 +226,4 @@ namespace vkeng {
         static Frustum fromMatrix(const glm::mat4& viewProjectionMatrix);
     };
 
-    /**
-     * @class CameraController
-     * @brief An interface for classes that control a camera's movement and rotation.
-     */
-    class CameraController {
-    public:
-        virtual ~CameraController() = default;
-        
-        /** @brief Updates the controller's state, called once per frame. */
-        virtual void update(float deltaTime) = 0;
-        /** @brief Handles input events to modify the camera's transform. */
-        virtual void handleInput(/* input events */) = 0;
-        
-        /** @brief Sets the camera to be controlled. */
-        void setCamera(std::shared_ptr<Camera> camera) { m_camera = camera; }
-        /** @brief Gets the controlled camera. */
-        std::shared_ptr<Camera> getCamera() const { return m_camera; }
-        
-    protected:
-        std::shared_ptr<Camera> m_camera; ///< The camera being controlled.
-    };
-
 } // namespace vkeng
