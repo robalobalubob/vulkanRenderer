@@ -41,6 +41,7 @@ namespace vkeng {
         std::unique_ptr<VulkanSwapChain> swapChain_{};
         std::unique_ptr<RenderPass> renderPass_{};
         std::unique_ptr<Pipeline> pipeline_{};
+        VkPipelineLayout pipelineLayout_{};
 
         // The renderer that will handle all drawing
         std::unique_ptr<Renderer> renderer_{};

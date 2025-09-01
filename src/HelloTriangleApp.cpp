@@ -9,7 +9,7 @@
 namespace vkeng {
 
 // Helper function declarations that are now internal to this file
-void createPipelineLayout(VkDevice device, VkDescriptorSetLayout descriptorSetLayout, VkPipelineLayout* pipelineLayout);
+void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout);
 void createDescriptorPool(VkDevice device, uint32_t frameCount, VkDescriptorPool* descriptorPool);
 void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool descriptorPool,
                           VkDescriptorSetLayout descriptorSetLayout, const std::vector<std::shared_ptr<Buffer>>& uniformBuffers,
@@ -26,6 +26,9 @@ HelloTriangleApp::~HelloTriangleApp() {
 
     renderer_.reset(); // Must be destroyed before the objects it references
 
+    if (pipelineLayout_ != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device_->getDevice(), pipelineLayout_, nullptr);
+    }
     if (descriptorPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(device_->getDevice(), descriptorPool_, nullptr);
     }
@@ -75,16 +78,9 @@ void HelloTriangleApp::initVulkan() {
     swapChain_ = std::make_unique<VulkanSwapChain>(device_->getDevice(), device_->getPhysicalDevice(), surface_, width, height);
     renderPass_ = std::make_unique<RenderPass>(device_->getDevice(), swapChain_->imageFormat());
 
-    createPipelineLayout(device_->getDevice(), descriptorSetLayout_, &pipelineLayout_);
+    createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_);
 
-    pipeline_ = std::make_unique<Pipeline>(
-        device_->getDevice(),
-        renderPass_->get(),
-        swapChain_->extent(),
-        descriptorSetLayout_,
-        "../shaders/vert.spv",
-        "../shaders/frag.spv"
-    );
+    pipeline_ = std::make_unique<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), "shaders/vert.spv", "shaders/frag.spv"); 
 
     // Create Mesh and UBOs
     const std::vector<Vertex> vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
@@ -107,7 +103,7 @@ void HelloTriangleApp::initVulkan() {
 
 void HelloTriangleApp::initScene() {
     // Create two different meshes
-    const std::vector<Vertex> squareVertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
+    const std::vector<Vertex> squareVertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}};
     const std::vector<uint32_t> squareIndices = {0, 1, 2, 2, 3, 0};
     auto squareMesh = std::make_shared<Mesh>(memoryManager_, squareVertices, squareIndices);
 
@@ -160,19 +156,34 @@ void HelloTriangleApp::mainLoop() {
 }
 
 // --- Helper Implementations ---
-// This function now creates the Pipeline Layout, which includes the descriptor set layout AND push constant ranges.
-void createPipelineLayout(VkDevice device, VkDescriptorSetLayout descriptorSetLayout, VkPipelineLayout* pipelineLayout) {
-    // Setup for push constants
+void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout) {
+    // --- Create Descriptor Set Layout ---
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create descriptor set layout!");
+    }
+
+    // --- Create Pipeline Layout ---
     VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // Available in the vertex shader
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(MeshPushConstants);
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1; // We are now using one push constant range
+    pipelineLayoutInfo.pSetLayouts = descriptorSetLayout; // Use the layout we just created
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, pipelineLayout) != VK_SUCCESS) {

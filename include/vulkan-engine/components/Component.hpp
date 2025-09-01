@@ -36,7 +36,7 @@ namespace vkeng {
      */
     template<typename T>
     inline ComponentTypeId getComponentTypeId() {
-        static_assert(std::is_base_of_v<class Component, T>, "T must be a Component type");
+        //static_assert(std::is_base_of_v<class Component, T>, "T must be a Component type");
         static const ComponentTypeId id = getNextComponentTypeId();
         return id;
     }

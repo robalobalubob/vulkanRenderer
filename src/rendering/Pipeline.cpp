@@ -10,9 +10,9 @@ namespace vkeng {
      * @details This constructor configures the entire graphics pipeline state,
      * including shader stages, vertex input, rasterization, and color blending.
      */
-    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkExtent2D extent, VkDescriptorSetLayout descriptorSetLayout,
-                       const std::filesystem::path& vertPath, const std::filesystem::path& fragPath)
-        : device_(device) {
+    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent, 
+                   const std::filesystem::path& vertPath, const std::filesystem::path& fragPath)
+        : device_(device), layout_(pipelineLayout) {
         
         // --- 1. Load Shader Modules ---
         auto vertShaderCode = readFile(vertPath);
@@ -106,18 +106,6 @@ namespace vkeng {
         colorBlending.attachmentCount = 1;
         colorBlending.pAttachments = &colorBlendAttachment;
 
-        // --- 8. Pipeline Layout ---
-        // Defines the interface between shader stages (e.g., descriptor sets).
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-        pipelineLayoutInfo.pushConstantRangeCount = 0;
-
-        if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &layout_) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create pipeline layout!");
-        }
-
         // --- 9. Create the Graphics Pipeline ---
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -149,9 +137,6 @@ namespace vkeng {
     Pipeline::~Pipeline() noexcept {
         if (pipeline_ != VK_NULL_HANDLE) {
             vkDestroyPipeline(device_, pipeline_, nullptr);
-        }
-        if (layout_ != VK_NULL_HANDLE) {
-            vkDestroyPipelineLayout(device_, layout_, nullptr);
         }
     }
 
