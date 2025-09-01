@@ -23,9 +23,9 @@ namespace vkeng {
         Renderer(const Renderer&) = delete;
         Renderer& operator=(const Renderer&) = delete;
 
-        void drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
-                       const std::vector<VkDescriptorSet>& descriptorSets,
-                       const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
+        void drawFrame(SceneNode& rootNode, Camera& camera,
+                         const std::vector<VkDescriptorSet>& descriptorSets,
+                         const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
 
     private:
         void createFramebuffers();
@@ -33,11 +33,11 @@ namespace vkeng {
         void createSyncObjects();
         void freeCommandBuffers();
         void recreateSwapChain();
-        void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& scene, Camera& camera, Mesh& mesh,
+        void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& rootNode, Camera& camera,
                                  const std::vector<VkDescriptorSet>& descriptorSets,
                                  const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
-        void updateUniformBuffer(uint32_t currentImage, SceneNode& scene, Camera& camera,
-                                 const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
+        void updateGlobalUbo(uint32_t currentImage, Camera& camera,
+                                 const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) ;
 
 
         GLFWwindow* m_window;

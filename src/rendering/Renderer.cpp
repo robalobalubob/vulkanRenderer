@@ -1,5 +1,6 @@
 #include "vulkan-engine/rendering/Renderer.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
+#include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
 #include "vulkan-engine/resources/Mesh.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
@@ -8,6 +9,9 @@
 #include <stdexcept>
 
 namespace vkeng {
+
+// Forward declaration for our new recursive function
+void renderNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, const SceneNode& node);
 
 Renderer::Renderer(GLFWwindow* window, VulkanDevice& device, VulkanSwapChain& swapChain, RenderPass& renderPass, Pipeline& pipeline)
     : m_window(window), m_device(device), m_swapChain(swapChain), m_renderPass(renderPass), m_pipeline(pipeline) {
@@ -29,7 +33,7 @@ Renderer::~Renderer() {
     }
 }
 
-void Renderer::drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
+void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
                          const std::vector<VkDescriptorSet>& descriptorSets,
                          const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
 
@@ -53,7 +57,7 @@ void Renderer::drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
     //    telling it to draw to the acquired SWAPCHAIN IMAGE.
     vkResetFences(m_device.getDevice(), 1, &frame.inFlightFence);
     vkResetCommandBuffer(frame.commandBuffer, 0);
-    recordCommandBuffer(frame.commandBuffer, imageIndex, scene, camera, mesh, descriptorSets, uniformBuffers);
+    recordCommandBuffer(frame.commandBuffer, imageIndex, rootNode, camera, descriptorSets, uniformBuffers);
 
     // 4. Submit the command buffer for the CURRENT FRAME IN FLIGHT.
     VkSubmitInfo submitInfo{};
@@ -94,12 +98,12 @@ void Renderer::drawFrame(SceneNode& scene, Camera& camera, Mesh& mesh,
     m_currentFrame = (m_currentFrame + 1) % m_frames.size();
 }
 
-void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& scene, Camera& camera, Mesh& mesh,
+void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& rootNode, Camera& camera,
                                  const std::vector<VkDescriptorSet>& descriptorSets,
                                  const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
     // We no longer need to fetch the command buffer here; it's passed in.
 
-    updateUniformBuffer(imageIndex, scene, camera, uniformBuffers);
+    updateGlobalUbo(imageIndex, camera, uniformBuffers);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -120,10 +124,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.getPipeline());
 
-    mesh.bind(commandBuffer);
-
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.getLayout(), 0, 1, &descriptorSets[imageIndex], 0, nullptr);
-    vkCmdDrawIndexed(commandBuffer, mesh.getIndexCount(), 1, 0, 0, 0);
+    renderNode(commandBuffer, m_pipeline.getLayout(), rootNode);
 
     vkCmdEndRenderPass(commandBuffer);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -131,18 +133,50 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     }
 }
 
-void Renderer::updateUniformBuffer(uint32_t currentImage, SceneNode& scene, Camera& camera,
+void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
                                  const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
-    UniformBufferObject ubo{};
-    if (scene.getChildCount() > 0) {
-        ubo.model = scene.getChild(0)->getWorldMatrix();
-    }
+    GlobalUbo ubo{};
     ubo.view = camera.getViewMatrix();
     ubo.proj = camera.getProjectionMatrix();
     uniformBuffers[currentImage]->copyData(&ubo, sizeof(ubo));
 }
 
 // --- Private Methods ---
+
+void renderNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, const SceneNode& node) {
+    // If the node is not active, skip it and all its children
+    if (!node.isActive()) {
+        return;
+    }
+
+    // Check if the node has a mesh to render
+    auto meshRenderer = node.getComponent<MeshRenderer>();
+    if (meshRenderer) {
+        auto mesh = meshRenderer->getMesh();
+        if (mesh) {
+            // This is a drawable node, so issue draw commands
+            MeshPushConstants pushConstants{};
+            pushConstants.modelMatrix = node.getWorldMatrix();
+
+            vkCmdPushConstants(
+                commandBuffer,
+                pipelineLayout,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                sizeof(MeshPushConstants),
+                &pushConstants);
+
+            mesh->bind(commandBuffer);
+            vkCmdDrawIndexed(commandBuffer, mesh->getIndexCount(), 1, 0, 0, 0);
+        }
+    }
+
+    // Recursively render all children
+    for (const auto& child : node.getChildren()) {
+        renderNode(commandBuffer, pipelineLayout, *child);
+    }
+}
+
 
 void Renderer::createFramebuffers() {
     m_swapChainFramebuffers.resize(m_swapChain.imageViews().size());

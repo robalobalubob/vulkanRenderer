@@ -2,13 +2,14 @@
 #include "vulkan-engine/rendering/Vertex.hpp"
 #include "vulkan-engine/resources/Mesh.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
+#include "vulkan-engine/components/MeshRenderer.hpp"
 //#include "vulkan-engine/core/VulkanInstance.hpp"
 #include <stdexcept>
 
 namespace vkeng {
 
 // Helper function declarations that are now internal to this file
-void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout);
+void createPipelineLayout(VkDevice device, VkDescriptorSetLayout descriptorSetLayout, VkPipelineLayout* pipelineLayout);
 void createDescriptorPool(VkDevice device, uint32_t frameCount, VkDescriptorPool* descriptorPool);
 void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool descriptorPool,
                           VkDescriptorSetLayout descriptorSetLayout, const std::vector<std::shared_ptr<Buffer>>& uniformBuffers,
@@ -74,7 +75,7 @@ void HelloTriangleApp::initVulkan() {
     swapChain_ = std::make_unique<VulkanSwapChain>(device_->getDevice(), device_->getPhysicalDevice(), surface_, width, height);
     renderPass_ = std::make_unique<RenderPass>(device_->getDevice(), swapChain_->imageFormat());
 
-    createDescriptorSetLayout(device_->getDevice(), &descriptorSetLayout_);
+    createPipelineLayout(device_->getDevice(), descriptorSetLayout_, &pipelineLayout_);
 
     pipeline_ = std::make_unique<Pipeline>(
         device_->getDevice(),
@@ -92,7 +93,7 @@ void HelloTriangleApp::initVulkan() {
 
     uniformBuffers_.resize(swapChain_->imageViews().size());
     for (size_t i = 0; i < swapChain_->imageViews().size(); i++) {
-        auto bufferResult = memoryManager_->createUniformBuffer(sizeof(UniformBufferObject));
+        auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
         if (!bufferResult) throw std::runtime_error("failed to create uniform buffer!");
         uniformBuffers_[i] = bufferResult.getValue();
     }
@@ -105,12 +106,32 @@ void HelloTriangleApp::initVulkan() {
 }
 
 void HelloTriangleApp::initScene() {
+    // Create two different meshes
+    const std::vector<Vertex> squareVertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
+    const std::vector<uint32_t> squareIndices = {0, 1, 2, 2, 3, 0};
+    auto squareMesh = std::make_shared<Mesh>(memoryManager_, squareVertices, squareIndices);
+
+    const std::vector<Vertex> triangleVertices = {{{0.0f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+    const std::vector<uint32_t> triangleIndices = {0, 1, 2};
+    auto triangleMesh = std::make_shared<Mesh>(memoryManager_, triangleVertices, triangleIndices);
+
+
     rootNode_ = std::make_shared<SceneNode>("Root");
-    auto objectNode = std::make_shared<SceneNode>("Object");
-    rootNode_->addChild(objectNode);
+
+    // Create the first object
+    auto squareNode = std::make_shared<SceneNode>("Square");
+    squareNode->getTransform().setPosition(-1.0f, 0.0f, 0.0f);
+    squareNode->addComponent<MeshRenderer>(squareMesh); // Attach the component
+    rootNode_->addChild(squareNode);
+
+    // Create the second object
+    auto triangleNode = std::make_shared<SceneNode>("Triangle");
+    triangleNode->getTransform().setPosition(1.0f, 0.0f, 0.0f);
+    triangleNode->addComponent<MeshRenderer>(triangleMesh); // Attach the component
+    rootNode_->addChild(triangleNode);
 
     camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float)swapChain_->extent().height, 0.1f, 10.0f);
-    camera_->getTransform().setPosition(0.0f, 0.0f, 3.0f);
+    camera_->getTransform().setPosition(0.0f, 0.0f, 5.0f); // Move camera back to see both objects
 }
 
 void HelloTriangleApp::mainLoop() {
@@ -122,33 +143,40 @@ void HelloTriangleApp::mainLoop() {
         float deltaTime = currentTime - lastTime;
         lastTime = currentTime;
 
-        // Update scene logic
-        if (rootNode_->getChildCount() > 0) {
-            rootNode_->getChild(0)->getTransform().rotate(glm::vec3(0.0f, 1.0f, 0.0f), deltaTime * glm::radians(45.0f));
+        // Update scene logic - animate each node independently
+        if (rootNode_->getChildCount() > 1) {
+            auto squareNode = rootNode_->getChild(0);
+            squareNode->getTransform().rotate(glm::vec3(0.0f, 0.0f, 1.0f), deltaTime * glm::radians(45.0f));
+
+            auto triangleNode = rootNode_->getChild(1);
+            triangleNode->getTransform().rotate(glm::vec3(0.0f, 1.0f, 0.0f), deltaTime * glm::radians(-90.0f));
         }
         rootNode_->update(deltaTime);
 
-        // Draw the scene
-        renderer_->drawFrame(*rootNode_, *camera_, *mesh_, descriptorSets_, uniformBuffers_);
+        // Draw the entire scene
+        renderer_->drawFrame(*rootNode_, *camera_, descriptorSets_, uniformBuffers_);
     }
     vkDeviceWaitIdle(device_->getDevice());
 }
 
 // --- Helper Implementations ---
-void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout) {
-    VkDescriptorSetLayoutBinding uboLayoutBinding{};
-    uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+// This function now creates the Pipeline Layout, which includes the descriptor set layout AND push constant ranges.
+void createPipelineLayout(VkDevice device, VkDescriptorSetLayout descriptorSetLayout, VkPipelineLayout* pipelineLayout) {
+    // Setup for push constants
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // Available in the vertex shader
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(MeshPushConstants);
 
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBinding;
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1; // We are now using one push constant range
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor set layout!");
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, pipelineLayout) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create pipeline layout!");
     }
 }
 
@@ -187,7 +215,7 @@ void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = uniformBuffers[i]->getHandle();
         bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject);
+        bufferInfo.range = sizeof(GlobalUbo);
 
         VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
