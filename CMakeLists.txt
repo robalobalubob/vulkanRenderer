@@ -19,6 +19,7 @@ add_executable(test_scene
 src/main.cpp
 src/HelloTriangleApp.cpp
 src/components/MeshRenderer.cpp
+src/core/InputManager.cpp
 src/core/VulkanInstance.cpp
 src/core/VulkanDevice.cpp
 src/core/VulkanSwapChain.cpp

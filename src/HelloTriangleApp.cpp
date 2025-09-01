@@ -3,7 +3,7 @@
 #include "vulkan-engine/resources/Mesh.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
-//#include "vulkan-engine/core/VulkanInstance.hpp"
+#include "vulkan-engine/core/InputManager.hpp"
 #include <stdexcept>
 
 namespace vkeng {
@@ -55,6 +55,7 @@ void HelloTriangleApp::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     window_ = glfwCreateWindow(800, 600, "Vulkan Engine", nullptr, nullptr);
+    InputManager::Init(window_);
 }
 
 void HelloTriangleApp::initVulkan() {
