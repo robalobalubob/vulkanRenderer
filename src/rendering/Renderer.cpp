@@ -1,3 +1,12 @@
+/**
+ * @file Renderer.cpp
+ * @brief Implementation of main rendering system managing frame rendering and presentation
+ * 
+ * This file implements the Renderer class which orchestrates the complete frame rendering
+ * pipeline including command buffer recording, synchronization, uniform buffer updates,
+ * and swap chain presentation. It manages multiple frames in flight for optimal performance.
+ */
+
 #include "vulkan-engine/rendering/Renderer.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
@@ -10,18 +19,40 @@
 
 namespace vkeng {
 
-// Forward declaration for our new recursive function
+// ============================================================================
+// Helper Function Declarations
+// ============================================================================
+
+/**
+ * @brief Recursively renders a scene node and its children
+ * @param commandBuffer Command buffer to record rendering commands into
+ * @param pipelineLayout Pipeline layout for push constant updates
+ * @param node Scene node to render (processes MeshRenderer components)
+ */
 void renderNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, const SceneNode& node);
+
+// ============================================================================
+// Constructor and Destructor
+// ============================================================================
 
 Renderer::Renderer(GLFWwindow* window, VulkanDevice& device, VulkanSwapChain& swapChain, RenderPass& renderPass, Pipeline& pipeline)
     : m_window(window), m_device(device), m_swapChain(swapChain), m_renderPass(renderPass), m_pipeline(pipeline) {
 
+    // Create command pool for allocating command buffers
     m_commandPool = std::make_unique<CommandPool>(m_device.getDevice(), m_device.getGraphicsFamily());
-    createFramebuffers();
-    createCommandBuffers();
-    createSyncObjects();
+    
+    // Initialize all rendering resources
+    createFramebuffers();    // Framebuffers for each swap chain image
+    createCommandBuffers();  // Command buffers for multi-frame rendering
+    createSyncObjects();     // Synchronization primitives for frame coordination
 }
 
+/**
+ * @brief Destroys renderer and cleans up all Vulkan resources
+ * 
+ * Ensures proper cleanup of framebuffers and synchronization objects.
+ * Command pool cleanup is handled automatically by the unique_ptr.
+ */
 Renderer::~Renderer() {
     for (auto framebuffer : m_swapChainFramebuffers) {
         vkDestroyFramebuffer(m_device.getDevice(), framebuffer, nullptr);
@@ -33,6 +64,27 @@ Renderer::~Renderer() {
     }
 }
 
+// ============================================================================
+// Main Rendering Interface
+// ============================================================================
+
+/**
+ * @brief Renders a complete frame with scene traversal and presentation
+ * 
+ * Orchestrates the complete frame rendering process:
+ * 1. Waits for previous frame completion with CPU-GPU synchronization
+ * 2. Acquires next available swap chain image
+ * 3. Records rendering commands with scene traversal
+ * 4. Updates uniform buffers with current frame data
+ * 5. Submits command buffer with proper synchronization
+ * 6. Presents rendered image to display
+ * 7. Handles swap chain recreation when needed
+ * 
+ * @param rootNode Root of the scene graph hierarchy to render
+ * @param camera Camera providing view and projection matrices
+ * @param descriptorSets Per-frame descriptor sets for shader resources
+ * @param uniformBuffers Per-frame uniform buffers for shader constants
+ */
 void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
                          const std::vector<VkDescriptorSet>& descriptorSets,
                          const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {

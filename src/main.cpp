@@ -1,20 +1,24 @@
 #include "vulkan-engine/examples/HelloTriangleApp.hpp"
+#include "vulkan-engine/core/Logger.hpp"
 #include <iostream>
 
 int main() {
-    std::cout << "=== Vulkan Engine Phase 1 Test ===" << std::endl;
-    std::cout << "Starting HelloTriangleApp..." << std::endl;
+    // Initialize logging system
+    vkeng::Logger::getInstance().setLogLevel(vkeng::LogLevel::INFO);
     
-    vkeng::HelloTriangleApp app;
+    LOG_INFO(GENERAL, "=== Vulkan Engine Phase 1 Test ===");
+    LOG_INFO(GENERAL, "Starting HelloTriangleApp...");
+    
     try {
-        std::cout << "Initializing Vulkan systems..." << std::endl;
+        LOG_INFO(GENERAL, "Initializing Vulkan systems...");
+        vkeng::HelloTriangleApp app;
         app.run();
-        std::cout << "Application completed successfully!" << std::endl;
+        LOG_INFO(GENERAL, "Application completed successfully!");
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n";
+        LOG_CRITICAL(GENERAL, "Fatal error: {}", e.what());
         return EXIT_FAILURE;
     }
     
-    std::cout << "=== Phase 1 Test Complete ===" << std::endl;
+    LOG_INFO(GENERAL, "=== Phase 1 Test Complete ===");
     return EXIT_SUCCESS;
 }

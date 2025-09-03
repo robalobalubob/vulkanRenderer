@@ -4,11 +4,17 @@
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/core/InputManager.hpp"
+#include "vulkan-engine/core/Logger.hpp"
 #include "vulkan-engine/rendering/FirstPersonCameraController.hpp"
 #include "vulkan-engine/rendering/OrbitCameraController.hpp"
 #include <stdexcept>
 
 namespace vkeng {
+
+// GLFW error callback
+static void glfw_error_callback(int error, const char* description) {
+    LOG_ERROR(GENERAL, "GLFW Error ({}): {}", error, description);
+}
 
 // Helper function declarations that are now internal to this file
 void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout);
@@ -18,6 +24,7 @@ void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool
                           std::vector<VkDescriptorSet>& descriptorSets);
 
 HelloTriangleApp::HelloTriangleApp() {
+    inputManager_ = std::make_unique<InputManager>();
     initWindow();
     initVulkan();
     initScene();
@@ -54,10 +61,18 @@ void HelloTriangleApp::run() {
 }
 
 void HelloTriangleApp::initWindow() {
-    glfwInit();
+    glfwSetErrorCallback(glfw_error_callback);
+    if (!glfwInit()) {
+        throw std::runtime_error("glfwInit failed.");
+    }
+
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     window_ = glfwCreateWindow(800, 600, "Vulkan Engine", nullptr, nullptr);
-    InputManager::Init(window_);
+    if (window_ == nullptr) {
+        // The error callback will likely have already printed a detailed error.
+        throw std::runtime_error("Failed to create GLFW window.");
+    }
+    inputManager_->init(window_);
 }
 
 void HelloTriangleApp::initVulkan() {
@@ -133,7 +148,7 @@ void HelloTriangleApp::initScene() {
     camera_->getTransform().setPosition(0.0f, 0.0f, 5.0f);
 
     // Create the controller and give it our camera to control
-    cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_);
+    cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_, *inputManager_);
 }
 
 void HelloTriangleApp::mainLoop() {
@@ -146,19 +161,26 @@ void HelloTriangleApp::mainLoop() {
         lastTime = currentTime;
 
         // --- Camera Controller Switching ---
-        if (InputManager::IsKeyTriggered(GLFW_KEY_C)) {
+        if (inputManager_->isKeyTriggered(GLFW_KEY_C)) {
             isOrbitController_ = !isOrbitController_;
             if (isOrbitController_) {
-                cameraController_ = std::make_shared<OrbitCameraController>(*camera_);
+                cameraController_ = std::make_shared<OrbitCameraController>(*camera_, *inputManager_);
             } else {
-                cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_);
+                cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_, *inputManager_);
             }
         }
 
-        cameraController_->update(deltaTime);
+        bool shouldDebug = (frameCount_ % DEBUG_FRAME_INTERVAL == 0);
+        if (shouldDebug) {
+            LOG_TRACE(GENERAL, "Frame start #{}, deltaTime={}", frameCount_, deltaTime);
+        }
+        cameraController_->update(window_, deltaTime);
 
-        if (InputManager::IsKeyTriggered(GLFW_KEY_R)) {
+        if (inputManager_->isKeyTriggered(GLFW_KEY_R)) {
             cameraController_->reset();
+        }
+        if (shouldDebug) {
+            // Input processing completed
         }
 
         // Update scene logic - animate each node independently
@@ -174,7 +196,11 @@ void HelloTriangleApp::mainLoop() {
         // Draw the entire scene
         renderer_->drawFrame(*rootNode_, *camera_, descriptorSets_, uniformBuffers_);
 
-        InputManager::EndFrame();
+        inputManager_->endFrame();
+        if (shouldDebug) {
+            LOG_TRACE(GENERAL, "Frame #{} completed", frameCount_);
+        }
+        frameCount_++;
     }
     vkDeviceWaitIdle(device_->getDevice());
 }

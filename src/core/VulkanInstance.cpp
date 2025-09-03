@@ -1,8 +1,8 @@
 #include "vulkan-engine/core/VulkanInstance.hpp"
+#include "vulkan-engine/core/Logger.hpp"
 #include <GLFW/glfw3.h>
 #include <cstring>
 #include <stdexcept>
-#include <iostream>
 #include <vulkan/vk_platform.h>
 
 namespace vkeng {
@@ -26,9 +26,13 @@ namespace vkeng {
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
         void* pUserData) {
         
-        // Log warnings and errors to the standard error stream.
-        if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-            std::cerr << "Validation Layer: " << pCallbackData->pMessage << std::endl;
+        // Log validation messages with appropriate severity
+        if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+            LOG_ERROR(VULKAN, "Validation: {}", pCallbackData->pMessage);
+        } else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+            LOG_WARN(VULKAN, "Validation: {}", pCallbackData->pMessage);
+        } else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+            LOG_DEBUG(VULKAN, "Validation: {}", pCallbackData->pMessage);
         }
         return VK_FALSE;
     }

@@ -1,5 +1,5 @@
 #include "vulkan-engine/core/MemoryManager.hpp"
-#include <iostream>
+#include "vulkan-engine/core/Logger.hpp"
 #include <sstream>
 #include <iomanip>
 #include <functional>
@@ -22,7 +22,7 @@ namespace vkeng {
         VkDevice device,
         uint32_t vulkanApiVersion) {
         
-        std::cout << "Creating VMA Memory Manager..." << std::endl;
+        LOG_DEBUG(MEMORY, "Creating VMA Memory Manager...");
         
         VmaAllocatorCreateInfo allocatorInfo = {};
         allocatorInfo.vulkanApiVersion = vulkanApiVersion;
@@ -53,13 +53,12 @@ namespace vkeng {
         VkPhysicalDeviceMemoryProperties memProps;
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
         
-        std::cout << "VMA Allocator created successfully:" << std::endl;
-        std::cout << "  Memory Heaps: " << memProps.memoryHeapCount << std::endl;
+        LOG_INFO(MEMORY, "VMA Allocator created successfully");
+        LOG_DEBUG(MEMORY, "Memory Heaps: {}", memProps.memoryHeapCount);
         for (uint32_t i = 0; i < memProps.memoryHeapCount; ++i) {
-            std::cout << "    Heap " << i << ": " 
-                    << MemoryUtils::formatMemorySize(memProps.memoryHeaps[i].size) << std::endl;
+            LOG_DEBUG(MEMORY, "  Heap {}: {}", i, MemoryUtils::formatMemorySize(memProps.memoryHeaps[i].size));
         }
-        std::cout << "  Memory Types: " << memProps.memoryTypeCount << std::endl;
+        LOG_DEBUG(MEMORY, "Memory Types: {}", memProps.memoryTypeCount);
         
         auto memoryManager = std::shared_ptr<MemoryManager>(new MemoryManager(device, allocator));
         
@@ -74,7 +73,7 @@ namespace vkeng {
         , m_allocator(allocator)
         , m_debugMode(false) {
         
-        std::cout << "MemoryManager initialized" << std::endl;
+        LOG_INFO(MEMORY, "MemoryManager initialized");
     }
 
     /**
@@ -82,7 +81,7 @@ namespace vkeng {
      */
     MemoryManager::~MemoryManager() noexcept {
         if (m_allocator != VK_NULL_HANDLE) {
-            std::cout << "Destroying VMA allocator..." << std::endl;
+            LOG_DEBUG(MEMORY, "Destroying VMA allocator...");
             
             if (m_debugMode) {
                 printMemoryUsage();
@@ -105,8 +104,8 @@ namespace vkeng {
             updateStats(createInfo.size, true, true);
             
             if (m_debugMode) {
-                std::cout << "Created buffer: " << createInfo.size << " bytes, "
-                        << (createInfo.hostVisible ? "host-visible" : "device-local") << std::endl;
+                LOG_DEBUG(MEMORY, "Created buffer: {} bytes, {}", createInfo.size,
+                        (createInfo.hostVisible ? "host-visible" : "device-local"));
             }
         }
         
@@ -197,8 +196,7 @@ namespace vkeng {
             updateStats(imageSize, true, false);
             
             if (m_debugMode) {
-                std::cout << "Created image: " << width << "x" << height 
-                        << ", format=" << format << std::endl;
+                LOG_DEBUG(MEMORY, "Created image: {}x{}, format={}", width, height, format);
             }
         }
         
@@ -248,7 +246,7 @@ namespace vkeng {
      */
     Result<void> MemoryManager::executeTransfer(std::function<void(VkCommandBuffer)> transferFunction) {
         // TODO: This will be implemented when CommandBuffer system is integrated.
-        std::cout << "Transfer operation requested - Command buffer integration needed" << std::endl;
+        LOG_WARN(MEMORY, "Transfer operation requested - Command buffer integration needed");
         
         return Result<void>(Error("Command buffer transfers not yet implemented - use host-visible buffers for now"));
     }
@@ -400,26 +398,26 @@ namespace vkeng {
         auto stats = getMemoryStats();
         auto detailedStats = getDetailedStats();
         
-        std::cout << "\n=== Memory Manager Statistics ===" << std::endl;
-        std::cout << "Tracked Allocations:" << std::endl;
-        std::cout << "  Total Allocated: " << MemoryUtils::formatMemorySize(stats.totalAllocated) << std::endl;
-        std::cout << "  Allocation Count: " << stats.allocationCount << std::endl;
-        std::cout << "  Buffer Count: " << stats.bufferCount << std::endl;
-        std::cout << "  Image Count: " << stats.imageCount << std::endl;
+        LOG_INFO(MEMORY, "=== Memory Manager Statistics ===");
+        LOG_INFO(MEMORY, "Tracked Allocations:");
+        LOG_INFO(MEMORY, "  Total Allocated: {}", MemoryUtils::formatMemorySize(stats.totalAllocated));
+        LOG_INFO(MEMORY, "  Allocation Count: {}", stats.allocationCount);
+        LOG_INFO(MEMORY, "  Buffer Count: {}", stats.bufferCount);
+        LOG_INFO(MEMORY, "  Image Count: {}", stats.imageCount);
         
-        std::cout << "\nVMA Statistics:" << std::endl;
-        std::cout << "  Total Memory: " << MemoryUtils::formatMemorySize(detailedStats.total.statistics.blockBytes) << std::endl;
-        std::cout << "  Allocations: " << detailedStats.total.statistics.allocationCount << std::endl;
-        std::cout << "  Memory Blocks: " << detailedStats.total.statistics.blockCount << std::endl;
+        LOG_INFO(MEMORY, "VMA Statistics:");
+        LOG_INFO(MEMORY, "  Total Memory: {}", MemoryUtils::formatMemorySize(detailedStats.total.statistics.blockBytes));
+        LOG_INFO(MEMORY, "  Allocations: {}", detailedStats.total.statistics.allocationCount);
+        LOG_INFO(MEMORY, "  Memory Blocks: {}", detailedStats.total.statistics.blockCount);
 
         for (uint32_t i = 0; i < VK_MAX_MEMORY_HEAPS; ++i) {
             if (detailedStats.memoryHeap[i].statistics.allocationCount > 0) {
-                std::cout << "  Heap " << i << ": " 
-                        << MemoryUtils::formatMemorySize(detailedStats.memoryHeap[i].statistics.blockBytes)
-                        << " (" << detailedStats.memoryHeap[i].statistics.allocationCount << " allocations)" << std::endl;
+                LOG_INFO(MEMORY, "  Heap {}: {} ({} allocations)", i,
+                        MemoryUtils::formatMemorySize(detailedStats.memoryHeap[i].statistics.blockBytes),
+                        detailedStats.memoryHeap[i].statistics.allocationCount);
             }
         }
-        std::cout << "================================\n" << std::endl;
+        LOG_INFO(MEMORY, "================================");
     }
 
     namespace MemoryUtils {

@@ -1,3 +1,20 @@
+/**
+ * @file MemoryManager.hpp
+ * @brief Professional Vulkan memory management using VMA (Vulkan Memory Allocator)
+ * 
+ * This file contains the MemoryManager class which provides a high-level abstraction
+ * for Vulkan memory allocation and management. It uses the Vulkan Memory Allocator (VMA)
+ * library to handle the complex process of GPU memory allocation, buffer creation,
+ * and efficient data transfer operations with automatic staging buffer management.
+ * 
+ * Key Memory Management Concepts:
+ * - VMA Integration: Professional memory allocation with optimal performance
+ * - Buffer Management: High-level buffer creation with usage-specific optimization
+ * - Image Management: 2D texture and render target creation with proper layouts
+ * - Staging Operations: Automatic CPU→GPU data transfers with staging buffers
+ * - Memory Statistics: Detailed tracking and reporting of memory usage
+ */
+
 #pragma once
 
 #include <vulkan/vulkan.h>
@@ -13,14 +30,23 @@
 namespace vkeng {
 
     /**
-     * Professional Memory Manager using Vulkan Memory Allocator (VMA)
+     * @class MemoryManager
+     * @brief Professional Memory Manager using Vulkan Memory Allocator (VMA)
      * 
-     * This class provides:
-     * - High-level buffer and image creation
-     * - Automatic staging buffer management  
-     * - Memory usage tracking and statistics
-     * - Error handling with detailed context
-     * - Debug utilities for development
+     * This class provides a comprehensive memory management system built on top of VMA,
+     * offering high-level buffer and image creation, automatic staging buffer management,
+     * memory usage tracking, and debug utilities for Vulkan applications.
+     * 
+     * Memory Management Features:
+     * - High-level buffer and image creation with usage optimization
+     * - Automatic staging buffer management for efficient CPU→GPU transfers
+     * - Memory usage tracking and detailed statistics reporting  
+     * - Error handling with detailed context and debugging information
+     * - Thread-safe operations with proper synchronization
+     * - Debug utilities for development and performance analysis
+     * 
+     * @note Uses Result<T> pattern for comprehensive error handling
+     * @warning Requires VMA library and proper Vulkan device initialization
      */
     class MemoryManager {
     public:

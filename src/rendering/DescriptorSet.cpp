@@ -1,6 +1,6 @@
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/core/Buffer.hpp"
-#include <iostream>
+#include "vulkan-engine/core/Logger.hpp"
 #include <cassert>
 #include <functional>
 
@@ -343,7 +343,7 @@ namespace vkeng {
         std::vector<DescriptorBinding> bindings = {{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, stages}};
         auto layoutResult = DescriptorSetLayout::create(m_device, bindings);
         if (!layoutResult) {
-            std::cerr << "Failed to create uniform buffer layout: " << layoutResult.getError().message << std::endl;
+            LOG_ERROR(RENDERING, "Failed to create uniform buffer layout: {}", layoutResult.getError().message);
             return nullptr;
         }
         
@@ -370,7 +370,7 @@ namespace vkeng {
         std::vector<DescriptorBinding> bindings = {{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textureCount, stages}};
         auto layoutResult = DescriptorSetLayout::create(m_device, bindings);
         if (!layoutResult) {
-            std::cerr << "Failed to create texture layout: " << layoutResult.getError().message << std::endl;
+            LOG_ERROR(RENDERING, "Failed to create texture layout: {}", layoutResult.getError().message);
             return nullptr;
         }
         
@@ -400,7 +400,7 @@ namespace vkeng {
         
         auto layoutResult = DescriptorSetLayout::create(m_device, bindings);
         if (!layoutResult) {
-            std::cerr << "Failed to create combined layout: " << layoutResult.getError().message << std::endl;
+            LOG_ERROR(RENDERING, "Failed to create combined layout: {}", layoutResult.getError().message);
             return nullptr;
         }
         
@@ -426,7 +426,7 @@ namespace vkeng {
         
         auto poolResult = DescriptorPool::create(m_device, maxSets, poolSizes);
         if (!poolResult) {
-            std::cerr << "Failed to create descriptor pool: " << poolResult.getError().message << std::endl;
+            LOG_ERROR(RENDERING, "Failed to create descriptor pool: {}", poolResult.getError().message);
             return nullptr;
         }
         

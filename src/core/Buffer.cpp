@@ -1,6 +1,6 @@
 #include "vulkan-engine/core/Buffer.hpp"
+#include "vulkan-engine/core/Logger.hpp"
 #include <stdexcept>
-#include <iostream>
 #include <cstring>  // For memcpy
 
 namespace vkeng {
@@ -116,8 +116,8 @@ namespace vkeng {
             // TODO: Add debug naming when a debug utils extension is available.
         }
         
-        std::cout << "Created buffer: " << createInfo.size << " bytes, " 
-                << (createInfo.hostVisible ? "host-visible" : "device-local") << std::endl;
+        LOG_DEBUG(MEMORY, "Created buffer: {} bytes, {}", createInfo.size, 
+                  (createInfo.hostVisible ? "host-visible" : "device-local"));
         
         return Result<std::shared_ptr<Buffer>>(bufferObj);
     }
@@ -126,7 +126,7 @@ namespace vkeng {
      * @brief Destructor that destroys the Vulkan buffer and frees its memory via VMA.
      */
     Buffer::~Buffer() {
-        std::cout << "Destroying Buffer..." << std::endl;
+        LOG_TRACE(MEMORY, "Destroying buffer");
 
         if (m_buffer != VK_NULL_HANDLE) {
             vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
