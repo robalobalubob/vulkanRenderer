@@ -5,10 +5,12 @@ namespace vkeng {
     /**
      * @brief Constructs a Mesh by creating and populating the vertex and index buffers.
      */
-    Mesh::Mesh(std::shared_ptr<MemoryManager> memoryManager, 
-            const std::vector<Vertex>& vertices, 
-            const std::vector<uint32_t>& indices)
-        : m_memoryManager(memoryManager) {
+    Mesh::Mesh(const std::string& name,
+           std::shared_ptr<MemoryManager> memoryManager, 
+           const std::vector<Vertex>& vertices, 
+           const std::vector<uint32_t>& indices)
+        : Resource(name), // <-- Call the base class constructor
+        m_memoryManager(memoryManager) {
 
         m_vertexCount = static_cast<uint32_t>(vertices.size());
         m_indexCount = static_cast<uint32_t>(indices.size());

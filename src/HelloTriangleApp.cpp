@@ -1,6 +1,9 @@
 #include "vulkan-engine/examples/HelloTriangleApp.hpp"
 #include "vulkan-engine/rendering/Vertex.hpp"
 #include "vulkan-engine/resources/Mesh.hpp"
+#include "vulkan-engine/resources/PrimitiveFactory.hpp"
+#include "vulkan-engine/resources/MeshLoader.hpp"
+#include "vulkan-engine/resources/ResourceManager.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/core/InputManager.hpp"
@@ -120,29 +123,31 @@ void HelloTriangleApp::initVulkan() {
 }
 
 void HelloTriangleApp::initScene() {
-    // Create two different meshes
-    const std::vector<Vertex> squareVertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}}};
-    const std::vector<uint32_t> squareIndices = {0, 1, 2, 2, 3, 0};
-    auto squareMesh = std::make_shared<Mesh>(memoryManager_, squareVertices, squareIndices);
+   // --- Activate the Resource Manager ---
+    ResourceManager::get().registerLoader<Mesh>(std::make_unique<MeshLoader>(memoryManager_));
 
-    const std::vector<Vertex> triangleVertices = {{{0.0f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
-    const std::vector<uint32_t> triangleIndices = {0, 1, 2};
-    auto triangleMesh = std::make_shared<Mesh>(memoryManager_, triangleVertices, triangleIndices);
+    // --- Load a mesh from a file ---
+    auto cubeHandle = ResourceManager::get().loadResource<Mesh>("assets/cube.obj");
+    if (!cubeHandle.isValid()) {
+        throw std::runtime_error("Failed to load cube model!");
+    }
+    auto cubeMesh = ResourceManager::get().getResource(cubeHandle);
 
+    // --- Use a procedural mesh ---
+    auto squareMesh = PrimitiveFactory::createQuad(memoryManager_);
 
+    // --- Build the Scene ---
     rootNode_ = std::make_shared<SceneNode>("Root");
 
-    // Create the first object
     auto squareNode = std::make_shared<SceneNode>("Square");
-    squareNode->getTransform().setPosition(-1.0f, 0.0f, 0.0f);
-    squareNode->addComponent<MeshRenderer>(squareMesh); // Attach the component
+    squareNode->getTransform().setPosition(-1.5f, 0.0f, 0.0f);
+    squareNode->addComponent<MeshRenderer>(squareMesh);
     rootNode_->addChild(squareNode);
 
-    // Create the second object
-    auto triangleNode = std::make_shared<SceneNode>("Triangle");
-    triangleNode->getTransform().setPosition(1.0f, 0.0f, 0.0f);
-    triangleNode->addComponent<MeshRenderer>(triangleMesh); // Attach the component
-    rootNode_->addChild(triangleNode);
+    auto cubeNode = std::make_shared<SceneNode>("Cube");
+    cubeNode->getTransform().setPosition(1.5f, 0.0f, 0.0f);
+    cubeNode->addComponent<MeshRenderer>(cubeMesh); // Use the loaded mesh
+    rootNode_->addChild(cubeNode);
 
     camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float)swapChain_->extent().height, 0.1f, 10.0f);
     camera_->getTransform().setPosition(0.0f, 0.0f, 5.0f);
@@ -188,8 +193,8 @@ void HelloTriangleApp::mainLoop() {
             auto squareNode = rootNode_->getChild(0);
             squareNode->getTransform().rotate(glm::vec3(0.0f, 0.0f, 1.0f), deltaTime * glm::radians(45.0f));
 
-            auto triangleNode = rootNode_->getChild(1);
-            triangleNode->getTransform().rotate(glm::vec3(0.0f, 1.0f, 0.0f), deltaTime * glm::radians(-90.0f));
+            auto cubeNode = rootNode_->getChild(1);
+            cubeNode->getTransform().rotate(glm::vec3(0.0f, 1.0f, 0.0f), deltaTime * glm::radians(-90.0f));
         }
         rootNode_->update(deltaTime);
 

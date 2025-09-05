@@ -8,9 +8,11 @@ find_package(glfw3 3.3 REQUIRED)
 find_package(glm REQUIRED)
 
 include_directories(include)
+include_directories(third_party/include)
 
 # Pull in VMA
 add_subdirectory(third_party/vma)
+
 
 configure_file(${CMAKE_SOURCE_DIR}/shaders/vert.spv ${CMAKE_BINARY_DIR}/shaders/vert.spv COPYONLY)
 configure_file(${CMAKE_SOURCE_DIR}/shaders/frag.spv ${CMAKE_BINARY_DIR}/shaders/frag.spv COPYONLY)
@@ -40,6 +42,9 @@ src/rendering/CommandBuffer.cpp
 src/rendering/DescriptorSet.cpp
 src/rendering/Vertex.cpp
 src/resources/Mesh.cpp
+src/resources/MeshLoader.cpp
+src/resources/PrimitiveFactory.cpp
+src/resources/ResourceManager.cpp
 src/scene/SceneNode.cpp
 )
 
