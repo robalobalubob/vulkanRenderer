@@ -60,7 +60,7 @@ vcpkg install glfw3 glm
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/robalobalubob/vulkanRenderer.git
 cd vulkanRenderer
 
 # Create build directory
@@ -197,13 +197,6 @@ glslc shader.frag -o frag.spv
 # Or use the provided script
 ./compile_shaders.sh
 ```
-
-## Performance Notes
-
-- **Memory Allocation**: Uses VMA for efficient Vulkan memory management
-- **Debug vs Release**: Validation layers automatically disabled in release builds
-- **Logging Overhead**: TRACE/DEBUG logs filtered out in production
-- **Camera Updates**: Optimized to skip redundant calculations
 
 ## Troubleshooting
 
