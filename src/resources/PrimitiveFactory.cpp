@@ -12,7 +12,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createQuad(std::shared_ptr<MemoryManager
     const std::vector<uint32_t> indices = {
         0, 1, 2, 2, 3, 0
     };
-    return std::make_shared<Mesh>(memoryManager, vertices, indices);
+    return std::make_shared<Mesh>("primitive_quad", memoryManager, vertices, indices);
 }
 
 std::shared_ptr<Mesh> PrimitiveFactory::createCube(std::shared_ptr<MemoryManager> memoryManager) {
@@ -57,7 +57,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createCube(std::shared_ptr<MemoryManager
          16, 17, 18, 18, 19, 16, // right
          20, 21, 22, 22, 23, 20  // left
     };
-    return std::make_shared<Mesh>(memoryManager, vertices, indices);
+    return std::make_shared<Mesh>("primitive_cube", memoryManager, vertices, indices);
 }
 
 } // namespace vkeng

@@ -106,7 +106,7 @@ void HelloTriangleApp::initVulkan() {
     // Create Mesh and UBOs
     const std::vector<Vertex> vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
     const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
-    mesh_ = std::make_shared<Mesh>(memoryManager_, vertices, indices);
+    mesh_ = std::make_shared<Mesh>("debug_triangle", memoryManager_, vertices, indices);
 
     uniformBuffers_.resize(swapChain_->imageViews().size());
     for (size_t i = 0; i < swapChain_->imageViews().size(); i++) {
@@ -127,7 +127,7 @@ void HelloTriangleApp::initScene() {
     ResourceManager::get().registerLoader<Mesh>(std::make_unique<MeshLoader>(memoryManager_));
 
     // --- Load a mesh from a file ---
-    auto cubeHandle = ResourceManager::get().loadResource<Mesh>("assets/cube.obj");
+    auto cubeHandle = ResourceManager::get().loadResource<Mesh>("../assets/cube.obj");
     if (!cubeHandle.isValid()) {
         throw std::runtime_error("Failed to load cube model!");
     }

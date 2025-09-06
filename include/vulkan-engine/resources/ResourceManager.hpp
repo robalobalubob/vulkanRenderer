@@ -76,6 +76,10 @@ private:
     struct ResourceEntry {
         std::shared_ptr<Resource> resource;
         std::type_index type;
+        
+        ResourceEntry() : type(typeid(void)) {}
+        ResourceEntry(std::shared_ptr<Resource> res, std::type_index t) 
+            : resource(std::move(res)), type(t) {}
     };
 
     std::mutex m_mutex;
@@ -106,7 +110,8 @@ ResourceHandle<T> ResourceManager::createResource(const std::string& name, Args&
     const uint64_t id = generateId();
     resource->m_id = id; // Set the ID after creation
 
-    m_resourcesById[id] = { resource, std::type_index(typeid(T)) };
+    // Store the resource entry
+    m_resourcesById[id] = ResourceEntry(resource, std::type_index(typeid(T)));
     m_resourcesByName[name] = id;
 
     return ResourceHandle<T>(id);
@@ -116,7 +121,9 @@ template<typename T>
 void ResourceManager::registerLoader(std::unique_ptr<ResourceLoader<T>> loader) {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::type_index typeIndex = std::type_index(typeid(T));
-    m_loaders[typeIndex] = std::move(loader);
+    // Convert unique_ptr to shared_ptr to store in std::any (since unique_ptr is not copyable)
+    std::shared_ptr<ResourceLoader<T>> sharedLoader = std::move(loader);
+    m_loaders[typeIndex] = sharedLoader;
 }
 
 template<typename T>
@@ -135,7 +142,7 @@ ResourceHandle<T> ResourceManager::loadResource(const std::string& path) {
 
     // Cast std::any to the correct loader type
     auto& loaderAny = loaderIt->second;
-    auto* loaderPtr = std::any_cast<std::unique_ptr<ResourceLoader<T>>>(&loaderAny);
+    auto* loaderPtr = std::any_cast<std::shared_ptr<ResourceLoader<T>>>(&loaderAny);
 
     if (loaderPtr && (*loaderPtr)->canLoad(path)) {
         auto result = (*loaderPtr)->load(path);
@@ -144,7 +151,8 @@ ResourceHandle<T> ResourceManager::loadResource(const std::string& path) {
             const uint64_t id = generateId();
             resource->m_id = id;
 
-            m_resourcesById[id] = { resource, typeIndex };
+            // Store the resource entry
+            m_resourcesById[id] = ResourceEntry(resource, typeIndex);
             m_resourcesByName[path] = id;
             return ResourceHandle<T>(id);
         }
