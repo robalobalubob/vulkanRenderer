@@ -36,7 +36,7 @@ HelloTriangleApp::HelloTriangleApp() {
 HelloTriangleApp::~HelloTriangleApp() {
     vkDeviceWaitIdle(device_->getDevice());
 
-    renderer_.reset(); // Must be destroyed before the objects it references
+    ResourceManager::get().clearResources();
 
     if (pipelineLayout_ != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device_->getDevice(), pipelineLayout_, nullptr);
@@ -93,6 +93,9 @@ void HelloTriangleApp::initVulkan() {
     auto memManagerResult = MemoryManager::create(instance_->get(), device_->getPhysicalDevice(), device_->getDevice());
     if (!memManagerResult) throw std::runtime_error("Failed to create Memory Manager");
     memoryManager_ = memManagerResult.getValue();
+
+    // Initialize the memory manager's transfer system
+    memoryManager_->initializeForTransfers(*device_);
 
     int width, height;
     glfwGetFramebufferSize(window_, &width, &height);

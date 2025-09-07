@@ -45,6 +45,8 @@ src/resources/Mesh.cpp
 src/resources/MeshLoader.cpp
 src/resources/PrimitiveFactory.cpp
 src/resources/ResourceManager.cpp
+src/resources/Texture.cpp
+src/resources/TextureLoader.cpp
 src/scene/SceneNode.cpp
 )
 

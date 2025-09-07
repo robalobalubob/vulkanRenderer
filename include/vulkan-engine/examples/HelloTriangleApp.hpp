@@ -139,7 +139,28 @@ namespace vkeng {
         std::unique_ptr<VulkanInstance> instance_{};                ///< Vulkan instance
         VkSurfaceKHR surface_{VK_NULL_HANDLE};                      ///< Window surface for presentation
         std::unique_ptr<VulkanDevice> device_{};                    ///< Logical device wrapper
+
+        // ============================================================================
+        // Rendering Resources
+        // ============================================================================
+        
+        std::shared_ptr<Mesh> mesh_{};                              ///< Demo triangle mesh
+        std::vector<std::shared_ptr<Buffer>> uniformBuffers_{};     ///< Per-frame uniform buffers
+        std::shared_ptr<SceneNode> rootNode_{};                     ///< Root node of scene graph
+        VkDescriptorSetLayout descriptorSetLayout_{};              ///< Layout for shader resources
+        VkDescriptorPool descriptorPool_{};                        ///< Pool for descriptor allocation
+        std::vector<VkDescriptorSet> descriptorSets_{};            ///< Per-frame descriptor sets
+
+        // ============================================================================
+        // Memory Management
+        // ============================================================================
+        
         std::shared_ptr<MemoryManager> memoryManager_{};            ///< VMA memory management
+
+        // ============================================================================
+        // Vulkan Rendering Pipeline
+        // ============================================================================
+        
         std::unique_ptr<VulkanSwapChain> swapChain_{};              ///< Swap chain for presentation
         std::unique_ptr<RenderPass> renderPass_{};                  ///< Render pass definition
         std::unique_ptr<Pipeline> pipeline_{};                      ///< Graphics pipeline
@@ -151,6 +172,7 @@ namespace vkeng {
         
         std::unique_ptr<Renderer> renderer_{};                      ///< Main renderer instance
         std::shared_ptr<CameraController> cameraController_{};      ///< Active camera controller
+        std::unique_ptr<PerspectiveCamera> camera_{};               ///< Main perspective camera
         bool isOrbitController_ = false;                            ///< Flag for controller type switching
 
         // ============================================================================
@@ -159,23 +181,6 @@ namespace vkeng {
         
         uint32_t frameCount_ = 0;                                   ///< Frame counter for debug output
         static constexpr uint32_t DEBUG_FRAME_INTERVAL = 60;       ///< Frames between debug prints
-
-        // ============================================================================
-        // Scene Management
-        // ============================================================================
-        
-        std::shared_ptr<SceneNode> rootNode_{};                     ///< Root node of scene graph
-        std::unique_ptr<PerspectiveCamera> camera_{};               ///< Main perspective camera
-
-        // ============================================================================
-        // Rendering Resources
-        // ============================================================================
-        
-        std::shared_ptr<Mesh> mesh_{};                              ///< Demo triangle mesh
-        std::vector<std::shared_ptr<Buffer>> uniformBuffers_{};     ///< Per-frame uniform buffers
-        VkDescriptorSetLayout descriptorSetLayout_{};              ///< Layout for shader resources
-        VkDescriptorPool descriptorPool_{};                        ///< Pool for descriptor allocation
-        std::vector<VkDescriptorSet> descriptorSets_{};            ///< Per-frame descriptor sets
     };
 
 } // namespace vkeng

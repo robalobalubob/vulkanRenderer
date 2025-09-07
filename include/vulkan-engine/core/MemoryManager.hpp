@@ -29,6 +29,9 @@
 
 namespace vkeng {
 
+    class VulkanDevice; // Forward declaration
+    class CommandPool;  // Forward declaration
+
     /**
      * @class MemoryManager
      * @brief Professional Memory Manager using Vulkan Memory Allocator (VMA)
@@ -245,6 +248,12 @@ namespace vkeng {
         // ADDED: Getter for VMA allocator (for advanced usage)
         VmaAllocator getAllocator() const { return m_allocator; }
 
+        /**
+         * @brief Initializes the manager's internal command pool for transfers.
+         * @param device The core VulkanDevice, used to get the queue and family index.
+         */
+        void initializeForTransfers(VulkanDevice& device);
+
     private:
         // Private constructor - use create() factory method
         MemoryManager(VkDevice device, VmaAllocator allocator);
@@ -256,6 +265,12 @@ namespace vkeng {
 
         // Member variables
         VkDevice m_device = VK_NULL_HANDLE;
+        
+        // Transfer command pool
+        VulkanDevice* m_deviceRef = nullptr;
+        std::unique_ptr<CommandPool> m_transferCommandPool;
+        
+        // VMA allocator
         VmaAllocator m_allocator = VK_NULL_HANDLE;
         
         // Statistics tracking

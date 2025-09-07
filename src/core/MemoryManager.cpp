@@ -1,5 +1,7 @@
 #include "vulkan-engine/core/MemoryManager.hpp"
 #include "vulkan-engine/core/Logger.hpp"
+#include "vulkan-engine/core/VulkanDevice.hpp"
+#include "vulkan-engine/rendering/CommandPool.hpp"
 #include <sstream>
 #include <iomanip>
 #include <functional>
@@ -241,14 +243,34 @@ namespace vkeng {
     }
 
     /**
-     * @brief Executes a transfer operation using a command buffer.
-     * @note This is a placeholder for a future, more integrated command buffer system.
+     * @brief Initializes a dedicated command pool for memory transfer operations.
+     */
+    void MemoryManager::initializeForTransfers(VulkanDevice& device) {
+        m_deviceRef = &device;
+        m_transferCommandPool = std::make_unique<CommandPool>(
+            device.getDevice(),
+            device.getGraphicsFamily()
+        );
+        LOG_INFO(MEMORY, "MemoryManager transfer system initialized.");
+    }
+
+    /**
+     * @brief Executes a function that records commands to a temporary command buffer.
+     * @details This is the core of our immediate-mode GPU operations. It handles
+     * the creation, submission, and cleanup of a command buffer for a single task.
      */
     Result<void> MemoryManager::executeTransfer(std::function<void(VkCommandBuffer)> transferFunction) {
-        // TODO: This will be implemented when CommandBuffer system is integrated.
-        LOG_WARN(MEMORY, "Transfer operation requested - Command buffer integration needed");
+        if (!m_transferCommandPool) {
+            return Result<void>(Error("MemoryManager transfer system not initialized. Call initializeForTransfers()."));
+        }
+
+        VkCommandBuffer commandBuffer = m_transferCommandPool->beginSingleTimeCommands();
         
-        return Result<void>(Error("Command buffer transfers not yet implemented - use host-visible buffers for now"));
+        transferFunction(commandBuffer);
+        
+        m_transferCommandPool->endSingleTimeCommands(commandBuffer, m_deviceRef->getGraphicsQueue());
+        
+        return Result<void>();
     }
 
     /**
@@ -302,46 +324,78 @@ namespace vkeng {
 
     /**
      * @brief Uploads data to an image, using a staging buffer.
+     * @details The process is:
+     * 1. Create a temporary, CPU-visible staging buffer.
+     * 2. Copy the pixel data from the CPU to the staging buffer.
+     * 3. Issue a GPU command to:
+     * a. Transition the destination image layout to be ready for a copy.
+     * b. Copy the data from the staging buffer to the destination image.
+     * c. Transition the destination image layout to be ready for shader sampling.
      */
     Result<void> MemoryManager::uploadToImage(
         std::shared_ptr<Image> dstImage,
         const void* data,
         VkDeviceSize size,
         uint32_t width, uint32_t height) {
-        
-        if (!dstImage) {
-            return Result<void>(Error("Destination image is null"));
-        }
-        
-        auto stagingBufferResult = createStagingBufferInternal(size);
+
+        // 1. Create staging buffer and copy data to it
+        auto stagingBufferResult = createStagingBuffer(size);
         if (!stagingBufferResult) {
             return Result<void>(stagingBufferResult.getError());
         }
-        
         auto stagingBuffer = stagingBufferResult.getValue();
-        
-        try {
-            stagingBuffer->copyData(data, size, 0);
-        } catch (const std::exception& e) {
-            return Result<void>(Error("Failed to copy data to staging buffer: " + std::string(e.what())));
+        auto copyResult = stagingBuffer->copyData(data, size);
+        if (!copyResult) {
+            return copyResult;
         }
-        
-        // This part requires a command buffer to copy from the buffer to the image.
-        return executeTransfer([=](VkCommandBuffer cmdBuffer) {
-            VkBufferImageCopy copyRegion = {};
-            copyRegion.bufferOffset = 0;
-            copyRegion.bufferRowLength = 0;
-            copyRegion.bufferImageHeight = 0;
-            copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            copyRegion.imageSubresource.mipLevel = 0;
-            copyRegion.imageSubresource.baseArrayLayer = 0;
-            copyRegion.imageSubresource.layerCount = 1;
-            copyRegion.imageOffset = {0, 0, 0};
-            copyRegion.imageExtent = {width, height, 1};
+
+        // 2. Execute a command buffer to transfer data
+        return executeTransfer([=](VkCommandBuffer cmd) {
+            // Transition layout to TRANSFER_DST_OPTIMAL
+            VkImageMemoryBarrier toTransferDst = {};
+            toTransferDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            toTransferDst.srcAccessMask = 0;
+            toTransferDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            toTransferDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            toTransferDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            toTransferDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toTransferDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toTransferDst.image = dstImage->getHandle();
+            toTransferDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            toTransferDst.subresourceRange.baseMipLevel = 0;
+            toTransferDst.subresourceRange.levelCount = 1;
+            toTransferDst.subresourceRange.baseArrayLayer = 0;
+            toTransferDst.subresourceRange.layerCount = 1;
+
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransferDst);
+
+            // Copy from buffer to image
+            VkBufferImageCopy region{};
+            region.bufferOffset = 0;
+            region.bufferRowLength = 0;
+            region.bufferImageHeight = 0;
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.layerCount = 1;
+            region.imageOffset = {0, 0, 0};
+            region.imageExtent = {width, height, 1};
+
+            vkCmdCopyBufferToImage(cmd, stagingBuffer->getHandle(), dstImage->getHandle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+            // Transition layout to SHADER_READ_ONLY_OPTIMAL
+            VkImageMemoryBarrier toShaderRead = {};
+            toShaderRead.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            toShaderRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            toShaderRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            toShaderRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            toShaderRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            toShaderRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toShaderRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toShaderRead.image = dstImage->getHandle();
+            toShaderRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            toShaderRead.subresourceRange.levelCount = 1;
+            toShaderRead.subresourceRange.layerCount = 1;
             
-            vkCmdCopyBufferToImage(cmdBuffer, stagingBuffer->getHandle(),
-                                dstImage->getHandle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                1, &copyRegion);
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toShaderRead);
         });
     }
 

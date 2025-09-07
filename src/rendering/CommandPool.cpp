@@ -66,17 +66,17 @@ namespace vkeng {
      */
     void CommandPool::endSingleTimeCommands(VkCommandBuffer commandBuffer, VkQueue queue) {
         vkEndCommandBuffer(commandBuffer);
-        
+
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
 
-        // TODO: This function is incomplete. It needs to actually submit the command buffer
-        // to the queue and wait for it to finish before freeing it.
-        // vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-        // vkQueueWaitIdle(queue);
-        
+        // Submit the command buffer to the graphics queue and wait for it to finish
+        vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(queue);
+
+        // Free the command buffer
         vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
     }
 
