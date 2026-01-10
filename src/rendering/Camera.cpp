@@ -148,6 +148,34 @@ namespace vkeng {
     PerspectiveCamera::PerspectiveCamera(float fov, float aspect, float near, float far)
         : Camera(CameraType::Perspective), m_fov(fov), m_aspect(aspect), m_near(near), m_far(far) {}
 
+    void PerspectiveCamera::setFieldOfView(float fov) {
+        m_fov = fov;
+        m_projectionDirty = true;
+    }
+
+    void PerspectiveCamera::setAspectRatio(float aspect) {
+        m_aspect = aspect;
+        m_projectionDirty = true;
+    }
+
+    void PerspectiveCamera::setNearPlane(float near) {
+        m_near = near;
+        m_projectionDirty = true;
+    }
+
+    void PerspectiveCamera::setFarPlane(float far) {
+        m_far = far;
+        m_projectionDirty = true;
+    }
+
+    void PerspectiveCamera::setPerspective(float fov, float aspect, float near, float far) {
+        m_fov = fov;
+        m_aspect = aspect;
+        m_near = near;
+        m_far = far;
+        m_projectionDirty = true;
+    }
+
     /**
      * @brief Calculates the perspective projection matrix.
      * @details This uses glm::perspective to create the matrix and then corrects

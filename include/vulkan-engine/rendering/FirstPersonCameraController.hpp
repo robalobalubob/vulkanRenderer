@@ -68,7 +68,7 @@ public:
      * position updates. Applies speed modifiers and ensures frame-rate
      * independent movement.
      */
-    void update(GLFWwindow* window, float deltaTime) override;
+    void update(float deltaTime) override;
     
     /**
      * @brief Resets camera to initial position and orientation

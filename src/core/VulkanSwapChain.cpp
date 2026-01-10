@@ -1,4 +1,5 @@
 #include "vulkan-engine/core/VulkanSwapChain.hpp"
+#include "vulkan-engine/core/Logger.hpp"
 #include <stdexcept>
 #include <algorithm>
 
@@ -7,17 +8,22 @@ namespace vkeng {
      * @brief Constructs the VulkanSwapChain, orchestrating the entire setup process.
      */
     VulkanSwapChain::VulkanSwapChain(VkDevice device, VkPhysicalDevice phys, VkSurfaceKHR surface, 
-                                     uint32_t width, uint32_t height)
-        : device_(device), physicalDevice_(phys), surface_(surface) {
+                                     uint32_t width, uint32_t height, std::shared_ptr<MemoryManager> memoryManager)
+        : device_(device), physicalDevice_(phys), surface_(surface), memoryManager_(memoryManager) {
         querySupport(phys, surface);
         createSwapChain();
         createImageViews();
+        createDepthResources();
     }
 
     /**
      * @brief Destroys the swap chain and its associated image views.
      */
     VulkanSwapChain::~VulkanSwapChain() noexcept {
+        // Note: depthImageView_ is owned by depthImage_ (shared_ptr<Image>),
+        // so it will be automatically destroyed when depthImage_ goes out of scope.
+        // We should NOT manually destroy it here.
+        
         for (auto imageView : imageViews_) {
             vkDestroyImageView(device_, imageView, nullptr);
         }
@@ -149,4 +155,126 @@ namespace vkeng {
             }
         }
     }
+    /**
+     * @brief Recreates the swap chain with new dimensions.
+     */
+    void VulkanSwapChain::recreate(uint32_t width, uint32_t height) {
+        // Clean up old swap chain resources
+        // Reset depth image - this properly destroys both the image and its view
+        depthImage_.reset();
+        depthImageView_ = VK_NULL_HANDLE;
+        
+        for (auto imageView : imageViews_) {
+            vkDestroyImageView(device_, imageView, nullptr);
+        }
+        imageViews_.clear();
+
+        VkSwapchainKHR oldSwapChain = swapChain_;
+
+        // Re-query support to get updated surface capabilities (like new size)
+        querySupport(physicalDevice_, surface_);
+
+        LOG_INFO(VULKAN, "Recreating swapchain. Window: {}x{}, Current: {}x{}, Min: {}x{}, Max: {}x{}", 
+                 width, height,
+                 support_.capabilities.currentExtent.width, support_.capabilities.currentExtent.height,
+                 support_.capabilities.minImageExtent.width, support_.capabilities.minImageExtent.height,
+                 support_.capabilities.maxImageExtent.width, support_.capabilities.maxImageExtent.height);
+
+        // 1. Choose settings (same as createSwapChain)
+        VkSurfaceFormatKHR surfaceFormat = support_.formats[0];
+        for (const auto& availableFormat : support_.formats) {
+            if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && 
+                availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                surfaceFormat = availableFormat;
+                break;
+            }
+        }
+
+        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+        for (const auto& availablePresentMode : support_.presentModes) {
+            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+                presentMode = availablePresentMode;
+                break;
+            }
+        }
+
+        LOG_INFO(VULKAN, "Recreating swapchain. Requested: {}x{}, Surface Current: {}x{}", 
+                 width, height, 
+                 support_.capabilities.currentExtent.width, 
+                 support_.capabilities.currentExtent.height);
+
+        if (support_.capabilities.currentExtent.width != UINT32_MAX) {
+            extent_ = support_.capabilities.currentExtent;
+        } else {
+            extent_.width = std::max(support_.capabilities.minImageExtent.width, 
+                                   std::min(width, support_.capabilities.maxImageExtent.width));
+            extent_.height = std::max(support_.capabilities.minImageExtent.height, 
+                                    std::min(height, support_.capabilities.maxImageExtent.height));
+        }
+        
+        LOG_INFO(VULKAN, "Selected Swapchain Extent: {}x{}", extent_.width, extent_.height);
+
+        uint32_t imageCount = support_.capabilities.minImageCount + 1;
+        if (support_.capabilities.maxImageCount > 0 && imageCount > support_.capabilities.maxImageCount) {
+            imageCount = support_.capabilities.maxImageCount;
+        }
+
+        VkSwapchainCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        createInfo.surface = surface_;
+        createInfo.minImageCount = imageCount;
+        createInfo.imageFormat = surfaceFormat.format;
+        createInfo.imageColorSpace = surfaceFormat.colorSpace;
+        createInfo.imageExtent = extent_;
+        createInfo.imageArrayLayers = 1;
+        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        createInfo.preTransform = support_.capabilities.currentTransform;
+        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        createInfo.presentMode = presentMode;
+        createInfo.clipped = VK_TRUE;
+        createInfo.oldSwapchain = oldSwapChain; // Use the old swapchain for better transition
+
+        if (vkCreateSwapchainKHR(device_, &createInfo, nullptr, &swapChain_) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to recreate swap chain!");
+        }
+
+        // Destroy the old swapchain now that the new one is created
+        if (oldSwapChain != VK_NULL_HANDLE) {
+            vkDestroySwapchainKHR(device_, oldSwapChain, nullptr);
+        }
+
+        format_ = surfaceFormat.format;
+
+        vkGetSwapchainImagesKHR(device_, swapChain_, &imageCount, nullptr);
+        images_.resize(imageCount);
+        vkGetSwapchainImagesKHR(device_, swapChain_, &imageCount, images_.data());
+
+        // Recreate image views
+        createImageViews();
+        createDepthResources();
+    }
+
+    void VulkanSwapChain::createDepthResources() {
+        VkFormat depthFormat = findDepthFormat();
+        auto result = memoryManager_->createDepthBuffer(extent_.width, extent_.height, depthFormat);
+        if (!result) {
+            throw std::runtime_error("Failed to create depth buffer: " + result.getError().message);
+        }
+        depthImage_ = result.getValue();
+        depthImageView_ = depthImage_->getImageView();
+    }
+
+    VkFormat VulkanSwapChain::findDepthFormat() {
+        std::vector<VkFormat> candidates = {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
+        for (VkFormat format : candidates) {
+            VkFormatProperties props;
+            vkGetPhysicalDeviceFormatProperties(physicalDevice_, format, &props);
+            if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+                return format;
+            }
+        }
+        throw std::runtime_error("failed to find supported depth format!");
+    }
+
 } // namespace vkeng

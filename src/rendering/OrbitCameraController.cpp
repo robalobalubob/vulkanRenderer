@@ -67,9 +67,9 @@ void OrbitCameraController::reset() {
  * @param window GLFW window for cursor state queries
  * @param deltaTime Frame time for smooth keyboard-based movement
  */
-void OrbitCameraController::update(GLFWwindow* window, float deltaTime) {
+void OrbitCameraController::update(float deltaTime) {
     // Handle input differently - orbit should work with cursor enabled for better UX
-    bool cursorCaptured = (glfwGetInputMode(window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED);
+    bool cursorCaptured = m_inputManager.isCursorCaptured();
     
     double deltaX, deltaY;
     m_inputManager.getMouseDelta(deltaX, deltaY);

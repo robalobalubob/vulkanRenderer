@@ -12,7 +12,7 @@ namespace vkeng {
      */
     Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent, 
                    const std::filesystem::path& vertPath, const std::filesystem::path& fragPath)
-        : device_(device), layout_(pipelineLayout) {
+        : device_(device), layout_(pipelineLayout), renderPass_(rp), extent_(extent), vertPath_(vertPath), fragPath_(fragPath) {
         
         // --- 1. Load Shader Modules ---
         auto vertShaderCode = readFile(vertPath);
@@ -21,6 +21,21 @@ namespace vkeng {
         VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
         VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
+        createGraphicsPipeline(vertShaderModule, fragShaderModule);
+
+        // Shader modules can be destroyed after the pipeline is created.
+        vkDestroyShaderModule(device_, fragShaderModule, nullptr);
+        vkDestroyShaderModule(device_, vertShaderModule, nullptr);
+    }
+
+    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent, 
+                   VkShaderModule vertModule, VkShaderModule fragModule)
+        : device_(device), layout_(pipelineLayout), renderPass_(rp), extent_(extent) {
+        
+        createGraphicsPipeline(vertModule, fragModule);
+    }
+
+    void Pipeline::createGraphicsPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule) {
         VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
         vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -58,14 +73,14 @@ namespace vkeng {
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = (float) extent.width;
-        viewport.height = (float) extent.height;
+        viewport.width = (float) extent_.width;
+        viewport.height = (float) extent_.height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
 
         VkRect2D scissor{};
         scissor.offset = {0, 0};
-        scissor.extent = extent;
+        scissor.extent = extent_;
 
         VkPipelineViewportStateCreateInfo viewportState{};
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -106,6 +121,30 @@ namespace vkeng {
         colorBlending.attachmentCount = 1;
         colorBlending.pAttachments = &colorBlendAttachment;
 
+        // --- 7b. Depth Stencil State ---
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencil.depthTestEnable = VK_TRUE;
+        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencil.depthBoundsTestEnable = VK_FALSE;
+        depthStencil.minDepthBounds = 0.0f; // Optional
+        depthStencil.maxDepthBounds = 1.0f; // Optional
+        depthStencil.stencilTestEnable = VK_FALSE;
+        depthStencil.front = {}; // Optional
+        depthStencil.back = {}; // Optional
+
+        // --- 8. Dynamic State ---
+        std::vector<VkDynamicState> dynamicStates = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
+
+        VkPipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+        dynamicState.pDynamicStates = dynamicStates.data();
+
         // --- 9. Create the Graphics Pipeline ---
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -116,19 +155,17 @@ namespace vkeng {
         pipelineInfo.pViewportState = &viewportState;
         pipelineInfo.pRasterizationState = &rasterizer;
         pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pDepthStencilState = &depthStencil;
         pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = &dynamicState; // Add dynamic state
         pipelineInfo.layout = layout_;
-        pipelineInfo.renderPass = rp;
+        pipelineInfo.renderPass = renderPass_;
         pipelineInfo.subpass = 0;
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
         if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create graphics pipeline!");
         }
-
-        // Shader modules can be destroyed after the pipeline is created.
-        vkDestroyShaderModule(device_, fragShaderModule, nullptr);
-        vkDestroyShaderModule(device_, vertShaderModule, nullptr);
     }
 
     /**

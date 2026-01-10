@@ -148,7 +148,14 @@ public:
      */
     void getMousePosition(double& x, double& y) const;
 
+    /**
+     * @brief Check if the cursor is currently captured (disabled)
+     * @return true if cursor is captured
+     */
+    bool isCursorCaptured() const;
+
 private:
+    GLFWwindow* m_window{nullptr};
     // ============================================================================
     // Internal Event Handlers
     // ============================================================================

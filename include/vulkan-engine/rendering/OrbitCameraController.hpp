@@ -71,7 +71,7 @@ public:
      * input mode (cursor captured or click-drag). Updates camera transform
      * to maintain focus on target point.
      */
-    void update(GLFWwindow* window, float deltaTime) override;
+    void update(float deltaTime) override;
     
     /**
      * @brief Resets camera to initial orbit position and target

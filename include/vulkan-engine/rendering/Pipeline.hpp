@@ -62,6 +62,16 @@ namespace vkeng {
             VkExtent2D extent,
             const std::filesystem::path& vertPath,
             const std::filesystem::path& fragPath);
+
+        /**
+         * @brief Constructs graphics pipeline from existing shader modules
+         */
+        explicit Pipeline(VkDevice device,
+            VkRenderPass renderPass,
+            VkPipelineLayout pipelineLayout,
+            VkExtent2D extent,
+            VkShaderModule vertModule,
+            VkShaderModule fragModule);
             
         /**
          * @brief Destroys pipeline and associated resources
@@ -108,6 +118,22 @@ namespace vkeng {
          * @return Shader bytecode as character vector
          */
         static std::vector<char> readFile(const std::filesystem::path& filename);
+
+        /**
+         * @brief Creates the graphics pipeline from shader modules
+         * @param vertModule Vertex shader module
+         * @param fragModule Fragment shader module
+         * 
+         * Configures all pipeline stages including:
+         * - Vertex input (from Vertex::getBindingDescription/getAttributeDescriptions)
+         * - Input assembly (triangle list)
+         * - Viewport and scissor (dynamic state)
+         * - Rasterization (filled polygons, back-face culling)
+         * - Multisampling (disabled)
+         * - Depth testing (enabled, LESS compare op)
+         * - Color blending (disabled)
+         */
+        void createGraphicsPipeline(VkShaderModule vertModule, VkShaderModule fragModule);
 
         // ============================================================================
         // Pipeline State

@@ -1,6 +1,6 @@
 # Vulkan Engine
 
-A modern C++17 Vulkan rendering engine with component-based architecture, featuring camera controls, memory management, and comprehensive logging.
+A modern C++17 Vulkan rendering engine designed as both a **learning project** and a **game engine foundation**. Features component-based architecture, camera controls, VMA memory management, and comprehensive logging.
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)

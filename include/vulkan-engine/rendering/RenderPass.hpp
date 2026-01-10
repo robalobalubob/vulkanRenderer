@@ -38,19 +38,38 @@ namespace vkeng {
      */
     class RenderPass {
         public:
-        explicit RenderPass(VkDevice device, VkFormat colorFormat);
+        /**
+         * @brief Constructs a render pass with color and depth attachments
+         * @param device Logical device for render pass creation
+         * @param colorFormat Format of the color attachment (swapchain image format)
+         * @param depthFormat Format of the depth attachment (e.g., VK_FORMAT_D32_SFLOAT)
+         * 
+         * Creates a single-subpass render pass suitable for basic 3D rendering with:
+         * - Color attachment: CLEAR on load, STORE for output, transitions to PRESENT_SRC
+         * - Depth attachment: CLEAR on load, DONT_CARE on store, optimal layout
+         * 
+         * @note Uses VK_ATTACHMENT_LOAD_OP_CLEAR for both attachments
+         */
+        explicit RenderPass(VkDevice device, VkFormat colorFormat, VkFormat depthFormat);
+        
+        /**
+         * @brief Destroys the render pass
+         * 
+         * Cleans up the Vulkan render pass object.
+         */
         ~RenderPass() noexcept;
 
+        // Non-copyable, movable
         RenderPass(const RenderPass&) = delete;
         RenderPass& operator=(const RenderPass&) = delete;
         RenderPass(RenderPass&&) noexcept = default;
         RenderPass& operator=(RenderPass&&) noexcept = default;
     
-        /** @brief Gets the raw Vulkan render pass handle. */
+        /** @brief Gets the raw Vulkan render pass handle for framebuffer/pipeline creation. */
         VkRenderPass get() const { return renderPass_; }
 
         private:
-        VkDevice device_{VK_NULL_HANDLE};           ///< The logical device.
-        VkRenderPass renderPass_{VK_NULL_HANDLE}; ///< The Vulkan render pass object.
+        VkDevice device_{VK_NULL_HANDLE};           ///< Logical device for resource cleanup
+        VkRenderPass renderPass_{VK_NULL_HANDLE};   ///< Vulkan render pass object
     };
 } // namespace vkeng

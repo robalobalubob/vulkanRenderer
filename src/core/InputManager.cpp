@@ -47,6 +47,7 @@ InputManager::~InputManager() {
  */
 void InputManager::init(GLFWwindow* window) {
     // Store the 'this' pointer in the window's user pointer
+    m_window = window;
     glfwSetWindowUserPointer(window, this);
 
     // Set GLFW callbacks to our static wrapper functions
@@ -56,7 +57,8 @@ void InputManager::init(GLFWwindow* window) {
     glfwSetScrollCallback(window, ScrollCallback);
 
     // Configure initial cursor mode for FPS-style camera control
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    // Start with normal cursor to allow interaction; click to capture
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 }
 
 /**
@@ -110,6 +112,11 @@ void InputManager::getScrollDelta(double& y) const {
 void InputManager::getMousePosition(double& x, double& y) const {
     x = m_mouseX;
     y = m_mouseY;
+}
+
+bool InputManager::isCursorCaptured() const {
+    if (!m_window) return false;
+    return glfwGetInputMode(m_window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
 }
 
 // --- Private Event Handlers ---
@@ -172,17 +179,28 @@ void InputManager::KeyCallback(GLFWwindow* window, int key, int scancode, int ac
     InputManager* manager = static_cast<InputManager*>(glfwGetWindowUserPointer(window));
     if (manager) {
         manager->handleKey(key, scancode, action, mods);
-        // Still handle global escape key press and F1 toggle here for simplicity
+        
+        // Handle ESC: Release cursor if captured, otherwise close window
         if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-            glfwSetWindowShouldClose(window, true);
+            int currentMode = glfwGetInputMode(window, GLFW_CURSOR);
+            if (currentMode == GLFW_CURSOR_DISABLED) {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                manager->m_firstMouse = true;
+                LOG_INFO(INPUT, "Cursor released");
+            } else {
+                glfwSetWindowShouldClose(window, true);
+            }
         }
+
         if (key == GLFW_KEY_F1 && action == GLFW_PRESS) {
             int currentMode = glfwGetInputMode(window, GLFW_CURSOR);
             if (currentMode == GLFW_CURSOR_DISABLED) {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 manager->m_firstMouse = true;
+                LOG_INFO(INPUT, "Cursor released via F1");
             } else {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                LOG_INFO(INPUT, "Cursor captured via F1");
             }
         }
     }
@@ -195,7 +213,19 @@ void InputManager::CursorPosCallback(GLFWwindow* window, double xpos, double ypo
 
 void InputManager::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     InputManager* manager = static_cast<InputManager*>(glfwGetWindowUserPointer(window));
-    if (manager) manager->handleMouseButton(button, action, mods);
+    if (manager) {
+        manager->handleMouseButton(button, action, mods);
+
+        // Click to capture
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+            int currentMode = glfwGetInputMode(window, GLFW_CURSOR);
+            if (currentMode == GLFW_CURSOR_NORMAL) {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                manager->m_firstMouse = true; // Reset mouse delta tracking
+                LOG_INFO(INPUT, "Cursor captured via Click");
+            }
+        }
+    }
 }
 
 void InputManager::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {

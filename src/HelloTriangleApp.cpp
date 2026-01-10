@@ -14,26 +14,23 @@
 
 namespace vkeng {
 
-// GLFW error callback
-static void glfw_error_callback(int error, const char* description) {
-    LOG_ERROR(GENERAL, "GLFW Error ({}): {}", error, description);
-}
-
-// Helper function declarations that are now internal to this file
+// Helper function declarations
 void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout);
 void createDescriptorPool(VkDevice device, uint32_t frameCount, VkDescriptorPool* descriptorPool);
 void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool descriptorPool,
                           VkDescriptorSetLayout descriptorSetLayout, const std::vector<std::shared_ptr<Buffer>>& uniformBuffers,
                           std::vector<VkDescriptorSet>& descriptorSets);
 
-HelloTriangleApp::HelloTriangleApp() {
-    inputManager_ = std::make_unique<InputManager>();
-    initWindow();
-    initVulkan();
-    initScene();
+HelloTriangleApp::HelloTriangleApp(const Config& config) : Engine(config) {
+    // Engine constructor handles core initialization
 }
 
 HelloTriangleApp::~HelloTriangleApp() {
+    // Base class destructor handles Device, Window, etc.
+    // We only need to clean up what we created in onInit
+}
+
+void HelloTriangleApp::onShutdown() {
     vkDeviceWaitIdle(device_->getDevice());
 
     ResourceManager::get().clearResources();
@@ -48,65 +45,32 @@ HelloTriangleApp::~HelloTriangleApp() {
         vkDestroyDescriptorSetLayout(device_->getDevice(), descriptorSetLayout_, nullptr);
     }
 
-    swapChain_.reset();
-
-    if (surface_ != VK_NULL_HANDLE) {
-        vkDestroySurfaceKHR(instance_->get(), surface_, nullptr);
-    }
-    if (window_) {
-        glfwDestroyWindow(window_);
-    }
-    glfwTerminate();
+    // Renderer, Pipeline, RenderPass are unique_ptrs and will be destroyed automatically
+    // BUT we must ensure they are destroyed before the Device (which is in Base class).
+    // The order of destruction is: Derived members -> Base members.
+    // So renderer_, pipeline_, renderPass_ will be destroyed before device_. Correct.
 }
 
-void HelloTriangleApp::run() {
-    mainLoop();
+void HelloTriangleApp::onInit() {
+    initRenderingPipeline();
+    initScene();
 }
 
-void HelloTriangleApp::initWindow() {
-    glfwSetErrorCallback(glfw_error_callback);
-    if (!glfwInit()) {
-        throw std::runtime_error("glfwInit failed.");
-    }
+void HelloTriangleApp::initRenderingPipeline() {
+    // 1. Create RenderPass
+    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), VK_FORMAT_D32_SFLOAT);
 
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    window_ = glfwCreateWindow(800, 600, "Vulkan Engine", nullptr, nullptr);
-    if (window_ == nullptr) {
-        // The error callback will likely have already printed a detailed error.
-        throw std::runtime_error("Failed to create GLFW window.");
-    }
-    inputManager_->init(window_);
-}
-
-void HelloTriangleApp::initVulkan() {
-    uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-    instance_ = std::make_unique<VulkanInstance>(extensions);
-
-    if (glfwCreateWindowSurface(instance_->get(), window_, nullptr, &surface_) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create window surface!");
-    }
-
-    device_ = std::make_unique<VulkanDevice>(instance_->get(), surface_);
-
-    auto memManagerResult = MemoryManager::create(instance_->get(), device_->getPhysicalDevice(), device_->getDevice());
-    if (!memManagerResult) throw std::runtime_error("Failed to create Memory Manager");
-    memoryManager_ = memManagerResult.getValue();
-
-    // Initialize the memory manager's transfer system
-    memoryManager_->initializeForTransfers(*device_);
-
-    int width, height;
-    glfwGetFramebufferSize(window_, &width, &height);
-    swapChain_ = std::make_unique<VulkanSwapChain>(device_->getDevice(), device_->getPhysicalDevice(), surface_, width, height);
-    renderPass_ = std::make_unique<RenderPass>(device_->getDevice(), swapChain_->imageFormat());
-
+    // 2. Create Layouts
     createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_);
 
-    pipeline_ = std::make_unique<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), "shaders/vert.spv", "shaders/frag.spv"); 
+    // 3. Create Pipeline
+    // Use config paths if available, otherwise default
+    std::string vertPath = config_.render.vertexShaderPath.empty() ? "shaders/vert.spv" : config_.render.vertexShaderPath;
+    std::string fragPath = config_.render.fragmentShaderPath.empty() ? "shaders/frag.spv" : config_.render.fragmentShaderPath;
 
-    // Create Mesh and UBOs
+    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), vertPath, fragPath); 
+
+    // 4. Create Mesh and UBOs (This is part of the "Scene" really, but tied to the pipeline setup)
     const std::vector<Vertex> vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}}, {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}, {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
     const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
     mesh_ = std::make_shared<Mesh>("debug_triangle", memoryManager_, vertices, indices);
@@ -121,8 +85,49 @@ void HelloTriangleApp::initVulkan() {
     createDescriptorPool(device_->getDevice(), swapChain_->imageViews().size(), &descriptorPool_);
     createDescriptorSets(device_->getDevice(), swapChain_->imageViews().size(), descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
 
-    // Finally, create the renderer
-    renderer_ = std::make_unique<Renderer>(window_, *device_, *swapChain_, *renderPass_, *pipeline_);
+    // 5. Create Renderer
+    renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, pipeline_);
+
+    // 6. Set Callback
+    // 6. Set Callback
+    renderer_->setRecreateCallback([this](uint32_t width, uint32_t height) {
+        recreateResources(width, height);
+    });
+}
+
+void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
+    LOG_INFO(GENERAL, "Recreating resources for size {}x{}", width, height);
+
+    // 1. Recreate RenderPass
+    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), VK_FORMAT_D32_SFLOAT);
+
+    // 2. Recreate Pipeline
+    std::string vertPath = config_.render.vertexShaderPath.empty() ? "shaders/vert.spv" : config_.render.vertexShaderPath;
+    std::string fragPath = config_.render.fragmentShaderPath.empty() ? "shaders/frag.spv" : config_.render.fragmentShaderPath;
+    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, VkExtent2D{width, height}, vertPath, fragPath);
+
+    // 3. Recreate Uniform Buffers and Descriptors (in case image count changed)
+    // Cleanup old resources
+    if (descriptorPool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device_->getDevice(), descriptorPool_, nullptr);
+    }
+    uniformBuffers_.clear();
+
+    // Recreate
+    size_t imageCount = swapChain_->imageViews().size();
+    uniformBuffers_.resize(imageCount);
+    for (size_t i = 0; i < imageCount; i++) {
+        auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
+        if (!bufferResult) throw std::runtime_error("failed to create uniform buffer!");
+        uniformBuffers_[i] = bufferResult.getValue();
+    }
+
+    createDescriptorPool(device_->getDevice(), static_cast<uint32_t>(imageCount), &descriptorPool_);
+    createDescriptorSets(device_->getDevice(), static_cast<uint32_t>(imageCount), descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+
+    // 4. Update Renderer
+    renderer_->setRenderPass(renderPass_);
+    renderer_->setPipeline(pipeline_);
 }
 
 void HelloTriangleApp::initScene() {
@@ -130,9 +135,15 @@ void HelloTriangleApp::initScene() {
     ResourceManager::get().registerLoader<Mesh>(std::make_unique<MeshLoader>(memoryManager_));
 
     // --- Load a mesh from a file ---
-    auto cubeHandle = ResourceManager::get().loadResource<Mesh>("../assets/cube.obj");
+    // Use config assets path
+    std::string cubePath = config_.assets.assetsPath + "cube.obj";
+    auto cubeHandle = ResourceManager::get().loadResource<Mesh>(cubePath);
+    
+    // Fallback if load fails (or just error out)
     if (!cubeHandle.isValid()) {
-        throw std::runtime_error("Failed to load cube model!");
+        LOG_ERROR(GENERAL, "Failed to load cube model from {}", cubePath);
+        // throw std::runtime_error("Failed to load cube model!"); 
+        // Don't throw, just log for now to allow running without assets if needed
     }
     auto cubeMesh = ResourceManager::get().getResource(cubeHandle);
 
@@ -149,7 +160,9 @@ void HelloTriangleApp::initScene() {
 
     auto cubeNode = std::make_shared<SceneNode>("Cube");
     cubeNode->getTransform().setPosition(1.5f, 0.0f, 0.0f);
-    cubeNode->addComponent<MeshRenderer>(cubeMesh); // Use the loaded mesh
+    if (cubeMesh) {
+        cubeNode->addComponent<MeshRenderer>(cubeMesh);
+    }
     rootNode_->addChild(cubeNode);
 
     camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float)swapChain_->extent().height, 0.1f, 10.0f);
@@ -159,58 +172,45 @@ void HelloTriangleApp::initScene() {
     cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_, *inputManager_);
 }
 
-void HelloTriangleApp::mainLoop() {
-    float lastTime = 0.0f;
-    while (!glfwWindowShouldClose(window_)) {
-        glfwPollEvents();
-
-        float currentTime = static_cast<float>(glfwGetTime());
-        float deltaTime = currentTime - lastTime;
-        lastTime = currentTime;
-
-        // --- Camera Controller Switching ---
-        if (inputManager_->isKeyTriggered(GLFW_KEY_C)) {
-            isOrbitController_ = !isOrbitController_;
-            if (isOrbitController_) {
-                cameraController_ = std::make_shared<OrbitCameraController>(*camera_, *inputManager_);
-            } else {
-                cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_, *inputManager_);
-            }
+void HelloTriangleApp::onUpdate(float deltaTime) {
+    // --- Camera Controller Switching ---
+    if (inputManager_->isKeyTriggered(GLFW_KEY_C)) {
+        isOrbitController_ = !isOrbitController_;
+        if (isOrbitController_) {
+            cameraController_ = std::make_shared<OrbitCameraController>(*camera_, *inputManager_);
+        } else {
+            cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_, *inputManager_);
         }
-
-        bool shouldDebug = (frameCount_ % DEBUG_FRAME_INTERVAL == 0);
-        if (shouldDebug) {
-            LOG_TRACE(GENERAL, "Frame start #{}, deltaTime={}", frameCount_, deltaTime);
-        }
-        cameraController_->update(window_, deltaTime);
-
-        if (inputManager_->isKeyTriggered(GLFW_KEY_R)) {
-            cameraController_->reset();
-        }
-        if (shouldDebug) {
-            // Input processing completed
-        }
-
-        // Update scene logic - animate each node independently
-        if (rootNode_->getChildCount() > 1) {
-            auto squareNode = rootNode_->getChild(0);
-            squareNode->getTransform().rotate(glm::vec3(0.0f, 0.0f, 1.0f), deltaTime * glm::radians(45.0f));
-
-            auto cubeNode = rootNode_->getChild(1);
-            cubeNode->getTransform().rotate(glm::vec3(0.0f, 1.0f, 0.0f), deltaTime * glm::radians(-90.0f));
-        }
-        rootNode_->update(deltaTime);
-
-        // Draw the entire scene
-        renderer_->drawFrame(*rootNode_, *camera_, descriptorSets_, uniformBuffers_);
-
-        inputManager_->endFrame();
-        if (shouldDebug) {
-            LOG_TRACE(GENERAL, "Frame #{} completed", frameCount_);
-        }
-        frameCount_++;
     }
-    vkDeviceWaitIdle(device_->getDevice());
+
+    bool shouldDebug = (frameCount_ % DEBUG_FRAME_INTERVAL == 0);
+    if (shouldDebug) {
+        LOG_TRACE(GENERAL, "Frame start #{}, deltaTime={}", frameCount_, deltaTime);
+    }
+    cameraController_->update(deltaTime);
+
+    if (inputManager_->isKeyTriggered(GLFW_KEY_R)) {
+        cameraController_->reset();
+    }
+
+    // Update scene logic - animate each node independently
+    if (rootNode_->getChildCount() > 1) {
+        auto squareNode = rootNode_->getChild(0);
+        squareNode->getTransform().rotate(glm::vec3(0.0f, 0.0f, 1.0f), deltaTime * glm::radians(45.0f));
+
+        auto cubeNode = rootNode_->getChild(1);
+        cubeNode->getTransform().rotate(glm::vec3(0.0f, 1.0f, 0.0f), deltaTime * glm::radians(-90.0f));
+    }
+    rootNode_->update(deltaTime);
+}
+
+void HelloTriangleApp::onRender() {
+    renderer_->drawFrame(*rootNode_, *camera_, descriptorSets_, uniformBuffers_);
+    
+    if (frameCount_ % DEBUG_FRAME_INTERVAL == 0) {
+        LOG_TRACE(GENERAL, "Frame #{} completed", frameCount_);
+    }
+    frameCount_++;
 }
 
 // --- Helper Implementations ---

@@ -55,9 +55,9 @@ void FirstPersonCameraController::reset() {
  * @param window GLFW window for cursor state queries
  * @param deltaTime Frame time for smooth, frame-rate independent movement
  */
-void FirstPersonCameraController::update(GLFWwindow* window, float deltaTime) {
+void FirstPersonCameraController::update(float deltaTime) {
     // Only update rotation if the cursor is captured
-    if (glfwGetInputMode(window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+    if (m_inputManager.isCursorCaptured()) {
         double deltaX, deltaY;
         m_inputManager.getMouseDelta(deltaX, deltaY);
         

@@ -34,7 +34,7 @@ public:
      * @param window A pointer to the GLFW window, for input queries.
      * @param deltaTime The time elapsed since the last frame, in seconds.
      */
-    virtual void update(GLFWwindow* window, float deltaTime) = 0;
+    virtual void update(float deltaTime) = 0;
 
     /**
      * @brief Resets the camera to its initial state.

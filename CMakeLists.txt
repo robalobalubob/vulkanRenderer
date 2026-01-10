@@ -22,6 +22,8 @@ src/main.cpp
 src/HelloTriangleApp.cpp
 src/components/MeshRenderer.cpp
 src/core/InputManager.cpp
+src/core/GlfwWindow.cpp
+src/core/Engine.cpp
 src/core/Logger.cpp
 src/core/VulkanInstance.cpp
 src/core/VulkanDevice.cpp

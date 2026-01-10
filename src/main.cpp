@@ -1,5 +1,6 @@
 #include "vulkan-engine/examples/HelloTriangleApp.hpp"
 #include "vulkan-engine/core/Logger.hpp"
+#include "vulkan-engine/core/Config.hpp"
 #include <iostream>
 
 int main() {
@@ -10,8 +11,15 @@ int main() {
     LOG_INFO(GENERAL, "Starting HelloTriangleApp...");
     
     try {
+        vkeng::Config config;
+        config.window.title = "Vulkan Engine - Phase 1";
+        config.window.width = 1280;
+        config.window.height = 720;
+        config.window.resizable = true;
+        config.assets.assetsPath = "../assets/";
+
         LOG_INFO(GENERAL, "Initializing Vulkan systems...");
-        vkeng::HelloTriangleApp app;
+        vkeng::HelloTriangleApp app(config);
         app.run();
         LOG_INFO(GENERAL, "Application completed successfully!");
     } catch (const std::exception& e) {
