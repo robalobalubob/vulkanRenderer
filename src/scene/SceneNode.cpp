@@ -45,10 +45,23 @@ namespace vkeng {
         if (!child || child->m_parent == this) {
             return false;
         }
-        if (child->m_parent) {
-            child->m_parent->removeChild(child);
+
+        // Prevent cycles by rejecting self-parenting and ancestor reattachment.
+        for (SceneNode* current = this; current != nullptr; current = current->m_parent) {
+            if (current == child.get()) {
+                return false;
+            }
         }
-        child->setParent(this);
+
+        if (child->m_parent) {
+            if (!child->m_parent->removeChild(child)) {
+                return false;
+            }
+        }
+
+        child->m_parent = this;
+        child->m_transform.setParent(&m_transform);
+        child->markWorldTransformDirty();
         m_children.push_back(child);
         return true;
     }
@@ -60,7 +73,9 @@ namespace vkeng {
         if (!child) return false;
         auto it = std::find(m_children.begin(), m_children.end(), child);
         if (it != m_children.end()) {
-            (*it)->setParent(nullptr);
+            (*it)->m_parent = nullptr;
+            (*it)->m_transform.setParent(nullptr);
+            (*it)->markWorldTransformDirty();
             m_children.erase(it);
             return true;
         }
@@ -72,7 +87,9 @@ namespace vkeng {
      */
     bool SceneNode::removeChild(size_t index) {
         if (index >= m_children.size()) return false;
-        m_children[index]->setParent(nullptr);
+        m_children[index]->m_parent = nullptr;
+        m_children[index]->m_transform.setParent(nullptr);
+        m_children[index]->markWorldTransformDirty();
         m_children.erase(m_children.begin() + index);
         return true;
     }
@@ -82,8 +99,8 @@ namespace vkeng {
      */
     void SceneNode::removeAllChildren() {
         for (auto& child : m_children) {
-            // Directly set the parent to null to avoid calling setParent and causing recursion.
             child->m_parent = nullptr;
+            child->m_transform.setParent(nullptr);
             child->markWorldTransformDirty();
         }
         m_children.clear();
@@ -94,11 +111,15 @@ namespace vkeng {
      */
     void SceneNode::setParent(SceneNode* parent) {
         if (m_parent == parent) return;
-        if (m_parent) {
-            m_parent->removeChild(shared_from_this());
+
+        if (parent == nullptr) {
+            if (m_parent) {
+                m_parent->removeChild(shared_from_this());
+            }
+            return;
         }
-        m_parent = parent;
-        markWorldTransformDirty();
+
+        parent->addChild(shared_from_this());
     }
 
     /**

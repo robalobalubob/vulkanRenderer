@@ -13,9 +13,78 @@ include_directories(third_party/include)
 # Pull in VMA
 add_subdirectory(third_party/vma)
 
+if (DEFINED Vulkan_GLSLC_EXECUTABLE AND EXISTS "${Vulkan_GLSLC_EXECUTABLE}")
+    set(GLSLC_EXECUTABLE "${Vulkan_GLSLC_EXECUTABLE}")
+else()
+    find_program(GLSLC_EXECUTABLE
+        NAMES glslc
+        HINTS
+            "$ENV{VULKAN_SDK}/Bin"
+            "$ENV{VULKAN_SDK}/bin")
+endif()
 
-configure_file(${CMAKE_SOURCE_DIR}/shaders/vert.spv ${CMAKE_BINARY_DIR}/shaders/vert.spv COPYONLY)
-configure_file(${CMAKE_SOURCE_DIR}/shaders/frag.spv ${CMAKE_BINARY_DIR}/shaders/frag.spv COPYONLY)
+if (NOT GLSLC_EXECUTABLE)
+    message(FATAL_ERROR "glslc was not found. Install the Vulkan SDK or add glslc to PATH.")
+endif()
+
+set(VKENG_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(VKENG_ASSET_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets")
+file(MAKE_DIRECTORY "${VKENG_SHADER_OUTPUT_DIR}")
+file(MAKE_DIRECTORY "${VKENG_ASSET_OUTPUT_DIR}")
+
+function(vkeng_compile_shader source_file output_file)
+    add_custom_command(
+        OUTPUT "${output_file}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${VKENG_SHADER_OUTPUT_DIR}"
+        COMMAND "${GLSLC_EXECUTABLE}" "${source_file}" -o "${output_file}"
+        DEPENDS "${source_file}"
+        COMMENT "Compiling shader ${source_file}"
+        VERBATIM)
+endfunction()
+
+function(vkeng_stage_runtime_file source_file relative_output_path staged_files_var)
+    set(output_file "${VKENG_ASSET_OUTPUT_DIR}/${relative_output_path}")
+    get_filename_component(output_dir "${output_file}" DIRECTORY)
+
+    add_custom_command(
+        OUTPUT "${output_file}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${output_dir}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${source_file}" "${output_file}"
+        DEPENDS "${source_file}"
+        COMMENT "Staging asset ${relative_output_path}"
+        VERBATIM)
+
+    set(${staged_files_var} ${${staged_files_var}} "${output_file}" PARENT_SCOPE)
+endfunction()
+
+vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert" "${VKENG_SHADER_OUTPUT_DIR}/vert.spv")
+vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag" "${VKENG_SHADER_OUTPUT_DIR}/frag.spv")
+
+add_custom_target(compile_shaders
+    DEPENDS
+        "${VKENG_SHADER_OUTPUT_DIR}/vert.spv"
+        "${VKENG_SHADER_OUTPUT_DIR}/frag.spv")
+
+file(GLOB_RECURSE VKENG_ASSET_SOURCES
+    CONFIGURE_DEPENDS
+    LIST_DIRECTORIES false
+    RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/*")
+
+set(VKENG_STAGED_ASSET_FILES)
+foreach(asset_relative_path IN LISTS VKENG_ASSET_SOURCES)
+    vkeng_stage_runtime_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/${asset_relative_path}"
+        "${asset_relative_path}"
+        VKENG_STAGED_ASSET_FILES)
+endforeach()
+
+add_custom_target(stage_assets DEPENDS ${VKENG_STAGED_ASSET_FILES})
+
+add_custom_target(prepare_runtime_content
+    DEPENDS
+        compile_shaders
+        stage_assets)
 
 add_executable(test_scene 
 src/main.cpp
@@ -50,6 +119,14 @@ src/resources/ResourceManager.cpp
 src/resources/Texture.cpp
 src/resources/TextureLoader.cpp
 src/scene/SceneNode.cpp
+)
+
+add_dependencies(test_scene prepare_runtime_content)
+
+target_compile_definitions(test_scene
+    PRIVATE
+        VKENG_SHADER_OUTPUT_DIR=\"${VKENG_SHADER_OUTPUT_DIR}\"
+    VKENG_ASSET_OUTPUT_DIR=\"${VKENG_ASSET_OUTPUT_DIR}\"
 )
 
 target_link_libraries(test_scene

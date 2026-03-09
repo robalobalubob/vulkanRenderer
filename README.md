@@ -66,17 +66,16 @@ cd vulkanRenderer
 # Create build directory
 mkdir build && cd build
 
-# Configure and build
+# Configure and build (runtime content is staged into build/)
 cmake ..
 make -j$(nproc)
 
-# Compile shaders
-cd ../shaders
-./compile_shaders.sh
-
-# Run the engine
-cd ../build
+# Run the engine from the build directory
 ./test_scene
+
+# Or run it from the repository root
+cd ..
+./build/test_scene
 ```
 
 ## Controls
@@ -107,9 +106,9 @@ vulkanRenderer/
 │   ├── scene/                      # Scene graph
 │   └── examples/                   # Example applications
 ├── src/                            # Source files (mirrors include structure)
-├── shaders/                        # GLSL shaders and compilation scripts
+├── shaders/                        # GLSL shader sources and manual compile script
 ├── third_party/vma/                # Vulkan Memory Allocator submodule
-└── build/                          # Build output directory
+└── build/                          # Build output directory with staged runtime content
 ```
 
 ## Architecture Overview
@@ -189,13 +188,25 @@ if (bufferResult.isSuccess()) {
 
 ### Shader Compilation
 ```bash
-# Manual compilation
-cd shaders/
-glslc shader.vert -o vert.spv
-glslc shader.frag -o frag.spv
+# Shaders are compiled automatically by the normal CMake build.
+# The generated SPIR-V files are written to build/shaders/.
 
-# Or use the provided script
+# Optional manual compilation into the source shaders/ directory
+cd shaders/
 ./compile_shaders.sh
+
+# Optional manual compilation into an explicit build tree
+./compile_shaders.sh ../build/shaders
+```
+
+### Runtime Content Staging
+```bash
+# The normal build prepares everything the executable needs at runtime:
+# - build/shaders/*.spv from shaders/*.vert and shaders/*.frag
+# - build/assets/** copied from assets/**
+
+cmake -S . -B build
+cmake --build build -j$(nproc)
 ```
 
 ## Troubleshooting

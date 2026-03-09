@@ -16,7 +16,6 @@ int main() {
         config.window.width = 1280;
         config.window.height = 720;
         config.window.resizable = true;
-        config.assets.assetsPath = "../assets/";
 
         LOG_INFO(GENERAL, "Initializing Vulkan systems...");
         vkeng::HelloTriangleApp app(config);

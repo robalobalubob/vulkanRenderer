@@ -39,23 +39,30 @@ namespace vkeng {
      * @return The allocated and begun command buffer.
      * @note The user is responsible for ending, submitting, and freeing this command buffer.
      */
-    VkCommandBuffer CommandPool::beginSingleTimeCommands() {
+    Result<VkCommandBuffer> CommandPool::beginSingleTimeCommands() {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         allocInfo.commandPool = commandPool_;
         allocInfo.commandBufferCount = 1;
 
-        VkCommandBuffer commandBuffer;
-        vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer);
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        VkResult result = vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer);
+        if (result != VK_SUCCESS) {
+            return Result<VkCommandBuffer>(Error("Failed to allocate command buffer", result));
+        }
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        if (result != VK_SUCCESS) {
+            vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
+            return Result<VkCommandBuffer>(Error("Failed to begin command buffer", result));
+        }
 
-        return commandBuffer;
+        return Result<VkCommandBuffer>(commandBuffer);
     }
 
     /**
@@ -64,8 +71,12 @@ namespace vkeng {
      * @param queue The queue to submit the command buffer to.
      * @note This implementation is incomplete as it does not actually submit to the queue.
      */
-    void CommandPool::endSingleTimeCommands(VkCommandBuffer commandBuffer, VkQueue queue) {
-        vkEndCommandBuffer(commandBuffer);
+    Result<void> CommandPool::endSingleTimeCommands(VkCommandBuffer commandBuffer, VkQueue queue) {
+        VkResult result = vkEndCommandBuffer(commandBuffer);
+        if (result != VK_SUCCESS) {
+            vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
+            return Result<void>(Error("Failed to end command buffer", result));
+        }
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -73,11 +84,22 @@ namespace vkeng {
         submitInfo.pCommandBuffers = &commandBuffer;
 
         // Submit the command buffer to the graphics queue and wait for it to finish
-        vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(queue);
+        result = vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+        if (result != VK_SUCCESS) {
+            vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
+            return Result<void>(Error("Failed to submit command buffer", result));
+        }
+
+        result = vkQueueWaitIdle(queue);
+        if (result != VK_SUCCESS) {
+            vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
+            return Result<void>(Error("Failed to wait for transfer queue idle", result));
+        }
 
         // Free the command buffer
         vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
+
+        return Result<void>();
     }
 
 } // namespace vkeng

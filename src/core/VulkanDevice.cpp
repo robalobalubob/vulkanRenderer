@@ -1,8 +1,72 @@
 #include "vulkan-engine/core/VulkanDevice.hpp"
 #include <stdexcept>
 #include <vector>
+#include <cstring>
 
 namespace vkeng {
+    namespace {
+        const std::vector<const char*> kRequiredDeviceExtensions = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        };
+
+        bool hasRequiredExtensions(VkPhysicalDevice device) {
+            uint32_t extensionCount = 0;
+            vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+            std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+            vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+            for (const char* requiredExtension : kRequiredDeviceExtensions) {
+                bool found = false;
+                for (const auto& extension : availableExtensions) {
+                    if (std::strcmp(requiredExtension, extension.extensionName) == 0) {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        bool findGraphicsPresentQueueFamily(VkPhysicalDevice device, VkSurfaceKHR surface, uint32_t& graphicsFamily) {
+            uint32_t queueFamilyCount = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+            std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+            vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+            for (uint32_t i = 0; i < queueFamilies.size(); i++) {
+                if ((queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0) {
+                    continue;
+                }
+
+                VkBool32 presentSupport = false;
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+                if (presentSupport) {
+                    graphicsFamily = i;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        bool hasSwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
+            uint32_t formatCount = 0;
+            vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
+
+            uint32_t presentModeCount = 0;
+            vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
+
+            return formatCount > 0 && presentModeCount > 0;
+        }
+    }
+
     /**
      * @brief Constructor that orchestrates the device setup process.
      */
@@ -36,28 +100,23 @@ namespace vkeng {
         std::vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
         
-        // Find the first suitable device.
         for (const auto& device : devices) {
-            uint32_t queueFamilyCount = 0;
-            vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-            
-            std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-            vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-            
-            for (uint32_t i = 0; i < queueFamilies.size(); i++) {
-                // Check for graphics queue support.
-                if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                    // Check for presentation support.
-                    VkBool32 presentSupport = false;
-                    vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-                    
-                    if (presentSupport) {
-                        physicalDevice_ = device;
-                        graphicsFamily_ = i;
-                        return; // Found a suitable device, so we can stop searching.
-                    }
-                }
+            uint32_t graphicsFamily = UINT32_MAX;
+            if (!hasRequiredExtensions(device)) {
+                continue;
             }
+
+            if (!findGraphicsPresentQueueFamily(device, surface, graphicsFamily)) {
+                continue;
+            }
+
+            if (!hasSwapChainSupport(device, surface)) {
+                continue;
+            }
+
+            physicalDevice_ = device;
+            graphicsFamily_ = graphicsFamily;
+            return;
         }
         
         throw std::runtime_error("Failed to find a suitable GPU!");
@@ -85,11 +144,8 @@ namespace vkeng {
         createInfo.pEnabledFeatures = &deviceFeatures;
         
         // Enable necessary device extensions. The swapchain extension is essential for rendering.
-        const std::vector<const char*> deviceExtensions = {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME
-        };
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-        createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(kRequiredDeviceExtensions.size());
+        createInfo.ppEnabledExtensionNames = kRequiredDeviceExtensions.data();
         
         if (vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create logical device!");

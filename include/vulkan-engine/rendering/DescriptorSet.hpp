@@ -99,11 +99,24 @@ namespace vkeng {
         VkDescriptorSet getHandle() const { return m_descriptorSet; }
         
     private:
+        enum class PendingWriteKind {
+            Buffer,
+            Image
+        };
+
+        struct PendingWrite {
+            uint32_t binding = 0;
+            uint32_t descriptorCount = 0;
+            VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+            PendingWriteKind kind = PendingWriteKind::Buffer;
+            size_t infoIndex = 0;
+        };
+
         VkDevice m_device = VK_NULL_HANDLE;
         VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
         std::shared_ptr<DescriptorSetLayout> m_layout;
         
-        std::vector<VkWriteDescriptorSet> m_pendingWrites;
+        std::vector<PendingWrite> m_pendingWrites;
         std::vector<VkDescriptorBufferInfo> m_bufferInfos;
         std::vector<VkDescriptorImageInfo> m_imageInfos;
     };

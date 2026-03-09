@@ -37,8 +37,8 @@ namespace vkeng {
          * @brief Rendering configuration
          */
         struct Render {
-            std::string vertexShaderPath = "shaders/vert.spv";      ///< Path to vertex shader SPIR-V
-            std::string fragmentShaderPath = "shaders/frag.spv";    ///< Path to fragment shader SPIR-V
+            std::string vertexShaderPath = "shaders/vert.spv";      ///< Relative paths prefer build-staged shader output when available
+            std::string fragmentShaderPath = "shaders/frag.spv";    ///< Relative paths prefer build-staged shader output when available
         } render;
 
         /**
@@ -46,7 +46,7 @@ namespace vkeng {
          * @brief Asset loading configuration
          */
         struct Assets {
-            std::string assetsPath = "assets/";     ///< Base path for asset loading
+            std::string assetsPath = "assets/";     ///< Relative paths prefer build-staged assets when available
         } assets;
     };
 

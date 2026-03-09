@@ -1,31 +1,26 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Shader compilation script for Vulkan Engine
-# This script compiles GLSL shaders to SPIR-V bytecode using glslc
+set -euo pipefail
 
-echo "Compiling shaders..."
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+output_dir="${1:-$script_dir}"
 
-# Compile vertex shader
-echo "Compiling vertex shader..."
-glslc shader.vert -o vert.spv
-if [ $? -eq 0 ]; then
-    echo "Vertex shader compiled successfully"
-else
-    echo "Failed to compile vertex shader"
+if ! command -v glslc >/dev/null 2>&1; then
+    echo "glslc was not found. Install the Vulkan SDK or add glslc to PATH." >&2
     exit 1
 fi
 
-# Compile fragment shader
-echo "Compiling fragment shader..."
-glslc shader.frag -o frag.spv
-if [ $? -eq 0 ]; then
-    echo "Fragment shader compiled successfully"
-else
-    echo "Failed to compile fragment shader"
-    exit 1
-fi
+mkdir -p "$output_dir"
 
-echo "All shaders compiled successfully!"
+echo "Compiling shaders into $output_dir"
+
+glslc "$script_dir/shader.vert" -o "$output_dir/vert.spv"
+echo "Vertex shader compiled successfully"
+
+glslc "$script_dir/shader.frag" -o "$output_dir/frag.spv"
+echo "Fragment shader compiled successfully"
+
+echo "All shaders compiled successfully"
 echo "Generated files:"
-echo "  - vert.spv"
-echo "  - frag.spv"
+echo "  - $output_dir/vert.spv"
+echo "  - $output_dir/frag.spv"

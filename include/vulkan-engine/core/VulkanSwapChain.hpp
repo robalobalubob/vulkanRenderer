@@ -145,7 +145,7 @@ namespace vkeng {
          * Selects optimal format and present mode, determines extent,
          * and creates the swapchain. Also retrieves swapchain images.
          */
-        void createSwapChain();
+        void createSwapChain(uint32_t width, uint32_t height, VkSwapchainKHR oldSwapChain = VK_NULL_HANDLE);
         
         /** 
          * @brief Creates image views for each image in the swap chain

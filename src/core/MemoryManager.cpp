@@ -264,11 +264,23 @@ namespace vkeng {
             return Result<void>(Error("MemoryManager transfer system not initialized. Call initializeForTransfers()."));
         }
 
-        VkCommandBuffer commandBuffer = m_transferCommandPool->beginSingleTimeCommands();
+        if (!m_deviceRef) {
+            return Result<void>(Error("MemoryManager transfer system is missing a device reference."));
+        }
+
+        auto commandBufferResult = m_transferCommandPool->beginSingleTimeCommands();
+        if (!commandBufferResult) {
+            return Result<void>(commandBufferResult.getError());
+        }
+
+        VkCommandBuffer commandBuffer = commandBufferResult.getValue();
         
         transferFunction(commandBuffer);
         
-        m_transferCommandPool->endSingleTimeCommands(commandBuffer, m_deviceRef->getGraphicsQueue());
+        auto submitResult = m_transferCommandPool->endSingleTimeCommands(commandBuffer, m_deviceRef->getGraphicsQueue());
+        if (!submitResult) {
+            return submitResult;
+        }
         
         return Result<void>();
     }
@@ -288,12 +300,12 @@ namespace vkeng {
         
         if (dstBuffer->isHostVisible()) {
             // For host-visible buffers, we can map and copy directly.
-            try {
-                dstBuffer->copyData(data, size, offset);
-                return Result<void>();
-            } catch (const std::exception& e) {
-                return Result<void>(Error("Failed to copy data to host-visible buffer: " + std::string(e.what())));
+            auto copyResult = dstBuffer->copyData(data, size, offset);
+            if (!copyResult) {
+                return Result<void>(copyResult.getError());
             }
+
+            return Result<void>();
         } else {
             // For device-local buffers, we must use a staging buffer.
             auto stagingBufferResult = createStagingBufferInternal(size);
@@ -302,11 +314,10 @@ namespace vkeng {
             }
             
             auto stagingBuffer = stagingBufferResult.getValue();
-            
-            try {
-                stagingBuffer->copyData(data, size, 0);
-            } catch (const std::exception& e) {
-                return Result<void>(Error("Failed to copy data to staging buffer: " + std::string(e.what())));
+
+            auto copyResult = stagingBuffer->copyData(data, size, 0);
+            if (!copyResult) {
+                return Result<void>(copyResult.getError());
             }
             
             // This part requires a command buffer to perform the GPU-side copy.

@@ -5,6 +5,41 @@
 
 namespace vkeng {
 
+    namespace {
+        bool isDepthFormat(VkFormat format) {
+            switch (format) {
+                case VK_FORMAT_D16_UNORM:
+                case VK_FORMAT_X8_D24_UNORM_PACK32:
+                case VK_FORMAT_D32_SFLOAT:
+                case VK_FORMAT_D16_UNORM_S8_UINT:
+                case VK_FORMAT_D24_UNORM_S8_UINT:
+                case VK_FORMAT_D32_SFLOAT_S8_UINT:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        bool hasStencilComponent(VkFormat format) {
+            return format == VK_FORMAT_D16_UNORM_S8_UINT ||
+                   format == VK_FORMAT_D24_UNORM_S8_UINT ||
+                   format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+        }
+
+        VkImageAspectFlags getImageAspectMask(VkFormat format) {
+            if (!isDepthFormat(format)) {
+                return VK_IMAGE_ASPECT_COLOR_BIT;
+            }
+
+            VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            if (hasStencilComponent(format)) {
+                aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            }
+
+            return aspectMask;
+        }
+    }
+
     // ============================================================================
     // Helper Functions
     // ============================================================================
@@ -235,9 +270,11 @@ namespace vkeng {
         void* mappedData = mapResult.getValue();
         
         std::memcpy(static_cast<char*>(mappedData) + offset, data, size);
-        
-        // For non-coherent memory, a flush would be needed here. VMA_MEMORY_USAGE_AUTO
-        // prefers coherent types, so this is often not required.
+
+        VkResult result = vmaFlushAllocation(m_allocator, m_allocation, offset, size);
+        if (result != VK_SUCCESS) {
+            return Result<void>(Error("Failed to flush buffer memory", result));
+        }
         
         return Result<void>();
     }
@@ -302,11 +339,7 @@ namespace vkeng {
         viewInfo.image = image;
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = format;
-        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        }
-        viewInfo.subresourceRange.aspectMask = aspectMask;
+        viewInfo.subresourceRange.aspectMask = getImageAspectMask(format);
         viewInfo.subresourceRange.baseMipLevel = 0;
         viewInfo.subresourceRange.levelCount = 1;
         viewInfo.subresourceRange.baseArrayLayer = 0;

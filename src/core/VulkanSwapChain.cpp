@@ -4,6 +4,42 @@
 #include <algorithm>
 
 namespace vkeng {
+    namespace {
+        VkSurfaceFormatKHR chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats) {
+            for (const auto& availableFormat : formats) {
+                if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+                    availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                    return availableFormat;
+                }
+            }
+
+            return formats.front();
+        }
+
+        VkPresentModeKHR choosePresentMode(const std::vector<VkPresentModeKHR>& presentModes) {
+            for (const auto& availablePresentMode : presentModes) {
+                if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+                    return availablePresentMode;
+                }
+            }
+
+            return VK_PRESENT_MODE_FIFO_KHR;
+        }
+
+        VkExtent2D chooseExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height) {
+            if (capabilities.currentExtent.width != UINT32_MAX) {
+                return capabilities.currentExtent;
+            }
+
+            VkExtent2D extent{};
+            extent.width = std::max(capabilities.minImageExtent.width,
+                                    std::min(width, capabilities.maxImageExtent.width));
+            extent.height = std::max(capabilities.minImageExtent.height,
+                                     std::min(height, capabilities.maxImageExtent.height));
+            return extent;
+        }
+    }
+
     /**
      * @brief Constructs the VulkanSwapChain, orchestrating the entire setup process.
      */
@@ -11,7 +47,7 @@ namespace vkeng {
                                      uint32_t width, uint32_t height, std::shared_ptr<MemoryManager> memoryManager)
         : device_(device), physicalDevice_(phys), surface_(surface), memoryManager_(memoryManager) {
         querySupport(phys, surface);
-        createSwapChain();
+        createSwapChain(width, height);
         createImageViews();
         createDepthResources();
     }
@@ -41,6 +77,7 @@ namespace vkeng {
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &support_.capabilities);
 
         uint32_t formatCount;
+        support_.formats.clear();
         vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
         if (formatCount != 0) {
             support_.formats.resize(formatCount);
@@ -48,6 +85,7 @@ namespace vkeng {
         }
 
         uint32_t presentModeCount;
+        support_.presentModes.clear();
         vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
         if (presentModeCount != 0) {
             support_.presentModes.resize(presentModeCount);
@@ -60,43 +98,24 @@ namespace vkeng {
      * @details This involves selecting the best available surface format, presentation
      * mode, and swap extent based on the queried device capabilities.
      */
-    void VulkanSwapChain::createSwapChain() {
-        // 1. Choose the best surface format (color space).
-        VkSurfaceFormatKHR surfaceFormat = support_.formats[0];
-        for (const auto& availableFormat : support_.formats) {
-            if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && 
-                availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                surfaceFormat = availableFormat;
-                break;
-            }
+    void VulkanSwapChain::createSwapChain(uint32_t width, uint32_t height, VkSwapchainKHR oldSwapChain) {
+        if (support_.formats.empty()) {
+            throw std::runtime_error("No surface formats available for swap chain creation");
         }
 
-        // 2. Choose the best presentation mode.
-        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR; // Guaranteed to be available
-        for (const auto& availablePresentMode : support_.presentModes) {
-            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                presentMode = availablePresentMode; // Prefer mailbox for low latency
-                break;
-            }
+        if (support_.presentModes.empty()) {
+            throw std::runtime_error("No present modes available for swap chain creation");
         }
 
-        // 3. Choose the swap extent (resolution of swap chain images).
-        if (support_.capabilities.currentExtent.width != UINT32_MAX) {
-            extent_ = support_.capabilities.currentExtent;
-        } else {
-            extent_.width = std::max(support_.capabilities.minImageExtent.width, 
-                                   std::min(800u, support_.capabilities.maxImageExtent.width));
-            extent_.height = std::max(support_.capabilities.minImageExtent.height, 
-                                    std::min(600u, support_.capabilities.maxImageExtent.height));
-        }
+        VkSurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(support_.formats);
+        VkPresentModeKHR presentMode = choosePresentMode(support_.presentModes);
+        extent_ = chooseExtent(support_.capabilities, width, height);
 
-        // 4. Determine the number of images in the swap chain.
         uint32_t imageCount = support_.capabilities.minImageCount + 1;
         if (support_.capabilities.maxImageCount > 0 && imageCount > support_.capabilities.maxImageCount) {
             imageCount = support_.capabilities.maxImageCount;
         }
 
-        // 5. Create the swap chain.
         VkSwapchainCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
         createInfo.surface = surface_;
@@ -111,16 +130,14 @@ namespace vkeng {
         createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         createInfo.presentMode = presentMode;
         createInfo.clipped = VK_TRUE;
-        createInfo.oldSwapchain = VK_NULL_HANDLE; // For resizing, otherwise null
+        createInfo.oldSwapchain = oldSwapChain;
 
         if (vkCreateSwapchainKHR(device_, &createInfo, nullptr, &swapChain_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create swap chain!");
         }
 
-        // Store the chosen format and extent for later use.
         format_ = surfaceFormat.format;
 
-        // Retrieve the handles to the swap chain images.
         vkGetSwapchainImagesKHR(device_, swapChain_, &imageCount, nullptr);
         images_.resize(imageCount);
         vkGetSwapchainImagesKHR(device_, swapChain_, &imageCount, images_.data());
@@ -180,75 +197,19 @@ namespace vkeng {
                  support_.capabilities.minImageExtent.width, support_.capabilities.minImageExtent.height,
                  support_.capabilities.maxImageExtent.width, support_.capabilities.maxImageExtent.height);
 
-        // 1. Choose settings (same as createSwapChain)
-        VkSurfaceFormatKHR surfaceFormat = support_.formats[0];
-        for (const auto& availableFormat : support_.formats) {
-            if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && 
-                availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                surfaceFormat = availableFormat;
-                break;
-            }
-        }
-
-        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-        for (const auto& availablePresentMode : support_.presentModes) {
-            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                presentMode = availablePresentMode;
-                break;
-            }
-        }
-
         LOG_INFO(VULKAN, "Recreating swapchain. Requested: {}x{}, Surface Current: {}x{}", 
                  width, height, 
                  support_.capabilities.currentExtent.width, 
                  support_.capabilities.currentExtent.height);
 
-        if (support_.capabilities.currentExtent.width != UINT32_MAX) {
-            extent_ = support_.capabilities.currentExtent;
-        } else {
-            extent_.width = std::max(support_.capabilities.minImageExtent.width, 
-                                   std::min(width, support_.capabilities.maxImageExtent.width));
-            extent_.height = std::max(support_.capabilities.minImageExtent.height, 
-                                    std::min(height, support_.capabilities.maxImageExtent.height));
-        }
-        
+        createSwapChain(width, height, oldSwapChain);
+
         LOG_INFO(VULKAN, "Selected Swapchain Extent: {}x{}", extent_.width, extent_.height);
-
-        uint32_t imageCount = support_.capabilities.minImageCount + 1;
-        if (support_.capabilities.maxImageCount > 0 && imageCount > support_.capabilities.maxImageCount) {
-            imageCount = support_.capabilities.maxImageCount;
-        }
-
-        VkSwapchainCreateInfoKHR createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        createInfo.surface = surface_;
-        createInfo.minImageCount = imageCount;
-        createInfo.imageFormat = surfaceFormat.format;
-        createInfo.imageColorSpace = surfaceFormat.colorSpace;
-        createInfo.imageExtent = extent_;
-        createInfo.imageArrayLayers = 1;
-        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        createInfo.preTransform = support_.capabilities.currentTransform;
-        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        createInfo.presentMode = presentMode;
-        createInfo.clipped = VK_TRUE;
-        createInfo.oldSwapchain = oldSwapChain; // Use the old swapchain for better transition
-
-        if (vkCreateSwapchainKHR(device_, &createInfo, nullptr, &swapChain_) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to recreate swap chain!");
-        }
 
         // Destroy the old swapchain now that the new one is created
         if (oldSwapChain != VK_NULL_HANDLE) {
             vkDestroySwapchainKHR(device_, oldSwapChain, nullptr);
         }
-
-        format_ = surfaceFormat.format;
-
-        vkGetSwapchainImagesKHR(device_, swapChain_, &imageCount, nullptr);
-        images_.resize(imageCount);
-        vkGetSwapchainImagesKHR(device_, swapChain_, &imageCount, images_.data());
 
         // Recreate image views
         createImageViews();

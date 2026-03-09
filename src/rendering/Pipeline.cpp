@@ -205,7 +205,9 @@ namespace vkeng {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
         if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file: " + filename.string());
+            throw std::runtime_error(
+                "Failed to open shader file: " + filename.string() +
+                ". Build the project to compile shaders or run shaders/compile_shaders.sh manually.");
         }
 
         size_t fileSize = (size_t) file.tellg();
@@ -214,6 +216,10 @@ namespace vkeng {
         file.seekg(0);
         file.read(buffer.data(), fileSize);
         file.close();
+
+        if (buffer.empty() || (buffer.size() % sizeof(uint32_t)) != 0) {
+            throw std::runtime_error("Shader file is not valid SPIR-V: " + filename.string());
+        }
 
         return buffer;
     }

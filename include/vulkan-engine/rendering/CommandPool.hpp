@@ -15,6 +15,7 @@
 
 #pragma once
 #include <vulkan/vulkan.h>
+#include "vulkan-engine/core/Result.hpp"
 
 namespace vkeng {
 
@@ -50,14 +51,14 @@ namespace vkeng {
          * @brief Begins a command buffer for a single, one-time submission.
          * @return A handle to the begun command buffer.
          */
-        VkCommandBuffer beginSingleTimeCommands();
+        Result<VkCommandBuffer> beginSingleTimeCommands();
         
         /**
          * @brief Ends, submits, and frees a single-time command buffer.
          * @param commandBuffer The command buffer to process.
          * @param queue The queue to submit the commands to.
          */
-        void endSingleTimeCommands(VkCommandBuffer commandBuffer, VkQueue queue);
+        Result<void> endSingleTimeCommands(VkCommandBuffer commandBuffer, VkQueue queue);
 
         /** @brief Gets the raw Vulkan command pool handle. */
         VkCommandPool getPool() const { return commandPool_; }

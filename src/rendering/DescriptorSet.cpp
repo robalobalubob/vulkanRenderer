@@ -192,13 +192,6 @@ namespace vkeng {
         bufferInfo.range = range;
         m_bufferInfos.push_back(bufferInfo);
         
-        VkWriteDescriptorSet writeDescriptor = {};
-        writeDescriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptor.dstSet = m_descriptorSet;
-        writeDescriptor.dstBinding = binding;
-        writeDescriptor.dstArrayElement = 0;
-        writeDescriptor.descriptorCount = 1;
-        
         VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         for (const auto& layoutBinding : m_layout->getBindings()) {
             if (layoutBinding.binding == binding) {
@@ -206,11 +199,14 @@ namespace vkeng {
                 break;
             }
         }
-        
-        writeDescriptor.descriptorType = descriptorType;
-        writeDescriptor.pBufferInfo = &m_bufferInfos.back();
-        
-        m_pendingWrites.push_back(writeDescriptor);
+
+        m_pendingWrites.push_back(PendingWrite{
+            binding,
+            1,
+            descriptorType,
+            PendingWriteKind::Buffer,
+            m_bufferInfos.size() - 1
+        });
     }
 
     /**
@@ -227,13 +223,6 @@ namespace vkeng {
         imageInfo.imageLayout = layout;
         m_imageInfos.push_back(imageInfo);
         
-        VkWriteDescriptorSet writeDescriptor = {};
-        writeDescriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptor.dstSet = m_descriptorSet;
-        writeDescriptor.dstBinding = binding;
-        writeDescriptor.dstArrayElement = 0;
-        writeDescriptor.descriptorCount = 1;
-        
         VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         for (const auto& layoutBinding : m_layout->getBindings()) {
             if (layoutBinding.binding == binding) {
@@ -241,11 +230,14 @@ namespace vkeng {
                 break;
             }
         }
-        
-        writeDescriptor.descriptorType = descriptorType;
-        writeDescriptor.pImageInfo = &m_imageInfos.back();
-        
-        m_pendingWrites.push_back(writeDescriptor);
+
+        m_pendingWrites.push_back(PendingWrite{
+            binding,
+            1,
+            descriptorType,
+            PendingWriteKind::Image,
+            m_imageInfos.size() - 1
+        });
     }
 
     /**
@@ -266,13 +258,6 @@ namespace vkeng {
             m_imageInfos.push_back(imageInfo);
         }
         
-        VkWriteDescriptorSet writeDescriptor = {};
-        writeDescriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptor.dstSet = m_descriptorSet;
-        writeDescriptor.dstBinding = binding;
-        writeDescriptor.dstArrayElement = 0;
-        writeDescriptor.descriptorCount = static_cast<uint32_t>(images.size());
-        
         VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         for (const auto& layoutBinding : m_layout->getBindings()) {
             if (layoutBinding.binding == binding) {
@@ -280,11 +265,14 @@ namespace vkeng {
                 break;
             }
         }
-        
-        writeDescriptor.descriptorType = descriptorType;
-        writeDescriptor.pImageInfo = &m_imageInfos[startIndex];
-        
-        m_pendingWrites.push_back(writeDescriptor);
+
+        m_pendingWrites.push_back(PendingWrite{
+            binding,
+            static_cast<uint32_t>(images.size()),
+            descriptorType,
+            PendingWriteKind::Image,
+            startIndex
+        });
     }
 
     /**
@@ -292,10 +280,33 @@ namespace vkeng {
      */
     void DescriptorSet::update() {
         if (m_pendingWrites.empty()) return;
+
+        std::vector<VkWriteDescriptorSet> writes;
+        writes.reserve(m_pendingWrites.size());
+
+        for (const auto& pendingWrite : m_pendingWrites) {
+            VkWriteDescriptorSet writeDescriptor = {};
+            writeDescriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeDescriptor.dstSet = m_descriptorSet;
+            writeDescriptor.dstBinding = pendingWrite.binding;
+            writeDescriptor.dstArrayElement = 0;
+            writeDescriptor.descriptorCount = pendingWrite.descriptorCount;
+            writeDescriptor.descriptorType = pendingWrite.descriptorType;
+
+            if (pendingWrite.kind == PendingWriteKind::Buffer) {
+                writeDescriptor.pBufferInfo = &m_bufferInfos[pendingWrite.infoIndex];
+            } else {
+                writeDescriptor.pImageInfo = &m_imageInfos[pendingWrite.infoIndex];
+            }
+
+            writes.push_back(writeDescriptor);
+        }
         
-        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(m_pendingWrites.size()), m_pendingWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
         
         m_pendingWrites.clear();
+        m_bufferInfos.clear();
+        m_imageInfos.clear();
     }
 
     // ============================================================================

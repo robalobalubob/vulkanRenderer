@@ -10,9 +10,84 @@
 #include "vulkan-engine/core/Logger.hpp"
 #include "vulkan-engine/rendering/FirstPersonCameraController.hpp"
 #include "vulkan-engine/rendering/OrbitCameraController.hpp"
+#include <filesystem>
 #include <stdexcept>
 
 namespace vkeng {
+
+namespace {
+std::filesystem::path getCompiledShaderOutputDir() {
+#ifdef VKENG_SHADER_OUTPUT_DIR
+    return std::filesystem::path(VKENG_SHADER_OUTPUT_DIR);
+#else
+    return std::filesystem::path("shaders");
+#endif
+}
+
+std::filesystem::path getStagedAssetOutputDir() {
+#ifdef VKENG_ASSET_OUTPUT_DIR
+    return std::filesystem::path(VKENG_ASSET_OUTPUT_DIR);
+#else
+    return std::filesystem::path("assets");
+#endif
+}
+
+std::filesystem::path stripLeadingDirectoryPrefix(const std::filesystem::path& path, const char* prefix) {
+    if (path.empty()) {
+        return path;
+    }
+
+    auto component = path.begin();
+    if (component == path.end() || *component != prefix) {
+        return path;
+    }
+
+    std::filesystem::path relativePath;
+    ++component;
+    for (; component != path.end(); ++component) {
+        relativePath /= *component;
+    }
+
+    return relativePath;
+}
+
+std::filesystem::path resolveRuntimePath(const std::string& configuredPath,
+                                        const std::filesystem::path& defaultPath,
+                                        const std::filesystem::path& stagedRoot,
+                                        const char* sourcePrefix) {
+    const std::filesystem::path requestedPath = configuredPath.empty()
+        ? defaultPath
+        : std::filesystem::path(configuredPath);
+
+    if (requestedPath.is_absolute()) {
+        return requestedPath;
+    }
+
+    const std::filesystem::path stagedPath =
+        stagedRoot / stripLeadingDirectoryPrefix(requestedPath, sourcePrefix);
+    if (std::filesystem::exists(stagedPath)) {
+        return stagedPath;
+    }
+
+    return requestedPath;
+}
+
+std::filesystem::path resolveShaderPath(const std::string& configuredPath, const char* defaultFileName) {
+    return resolveRuntimePath(
+        configuredPath,
+        std::filesystem::path("shaders") / defaultFileName,
+        getCompiledShaderOutputDir(),
+        "shaders");
+}
+
+std::filesystem::path resolveAssetBasePath(const std::string& configuredPath) {
+    return resolveRuntimePath(
+        configuredPath,
+        "assets",
+        getStagedAssetOutputDir(),
+        "assets");
+}
+} // namespace
 
 // Helper function declarations
 void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout);
@@ -64,9 +139,8 @@ void HelloTriangleApp::initRenderingPipeline() {
     createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_);
 
     // 3. Create Pipeline
-    // Use config paths if available, otherwise default
-    std::string vertPath = config_.render.vertexShaderPath.empty() ? "shaders/vert.spv" : config_.render.vertexShaderPath;
-    std::string fragPath = config_.render.fragmentShaderPath.empty() ? "shaders/frag.spv" : config_.render.fragmentShaderPath;
+    const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
+    const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
 
     pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), vertPath, fragPath); 
 
@@ -102,8 +176,8 @@ void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
     renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), VK_FORMAT_D32_SFLOAT);
 
     // 2. Recreate Pipeline
-    std::string vertPath = config_.render.vertexShaderPath.empty() ? "shaders/vert.spv" : config_.render.vertexShaderPath;
-    std::string fragPath = config_.render.fragmentShaderPath.empty() ? "shaders/frag.spv" : config_.render.fragmentShaderPath;
+    const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
+    const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
     pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, VkExtent2D{width, height}, vertPath, fragPath);
 
     // 3. Recreate Uniform Buffers and Descriptors (in case image count changed)
@@ -136,12 +210,14 @@ void HelloTriangleApp::initScene() {
 
     // --- Load a mesh from a file ---
     // Use config assets path
-    std::string cubePath = config_.assets.assetsPath + "cube.obj";
+    const auto assetBasePath = resolveAssetBasePath(config_.assets.assetsPath);
+    const auto cubePath = assetBasePath / "cube.obj";
+    LOG_INFO(GENERAL, "Loading scene assets from {}", assetBasePath.string());
     auto cubeHandle = ResourceManager::get().loadResource<Mesh>(cubePath);
     
     // Fallback if load fails (or just error out)
     if (!cubeHandle.isValid()) {
-        LOG_ERROR(GENERAL, "Failed to load cube model from {}", cubePath);
+        LOG_ERROR(GENERAL, "Failed to load cube model from {}", cubePath.string());
         // throw std::runtime_error("Failed to load cube model!"); 
         // Don't throw, just log for now to allow running without assets if needed
     }
