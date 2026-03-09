@@ -16,6 +16,7 @@
 #include "vulkan-engine/core/Buffer.hpp"
 #include "vulkan-engine/rendering/CommandPool.hpp"
 #include "vulkan-engine/core/Logger.hpp"
+#include <glm/geometric.hpp>
 #include <stdexcept>
 
 namespace vkeng {
@@ -253,6 +254,11 @@ void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
     GlobalUbo ubo{};
     ubo.view = camera.getViewMatrix();
     ubo.proj = camera.getProjectionMatrix();
+    ubo.cameraPosition = glm::vec4(camera.getPosition(), 1.0f);
+    ubo.lightDirection = glm::vec4(glm::normalize(glm::vec3(-0.6f, -1.0f, -0.4f)), 0.0f);
+    ubo.lightColor = glm::vec4(1.0f, 0.98f, 0.95f, 1.35f);
+    ubo.ambientColor = glm::vec4(0.14f, 0.14f, 0.16f, 1.0f);
+    ubo.debugView = glm::vec4(static_cast<float>(m_debugShadingMode), 0.0f, 0.0f, 0.0f);
     uniformBuffers[currentImage]->copyData(&ubo, sizeof(ubo));
 }
 
@@ -273,10 +279,17 @@ void renderNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, 
             MeshPushConstants pushConstants{};
             pushConstants.modelMatrix = node.getWorldMatrix();
 
+            if (auto material = meshRenderer->getMaterial()) {
+                const auto& factors = material->getFactors();
+                pushConstants.baseColorFactor = factors.baseColorFactor;
+                pushConstants.emissiveFactor = glm::vec4(factors.emissiveFactor, 0.0f);
+                pushConstants.specularColorAndShininess = glm::vec4(factors.specularColor, factors.shininess);
+            }
+
             vkCmdPushConstants(
                 commandBuffer,
                 pipelineLayout,
-                VK_SHADER_STAGE_VERTEX_BIT,
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 0,
                 sizeof(MeshPushConstants),
                 &pushConstants);

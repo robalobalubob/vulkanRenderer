@@ -48,6 +48,14 @@ namespace vkeng {
         struct Assets {
             std::string assetsPath = "assets/";     ///< Relative paths prefer build-staged assets when available
         } assets;
+
+        /**
+         * @struct Viewer
+         * @brief Model viewer application configuration
+         */
+        struct Viewer {
+            std::string modelPath = "cube.obj";     ///< Startup model path; relative paths prefer staged assets
+        } viewer;
     };
 
 } // namespace vkeng

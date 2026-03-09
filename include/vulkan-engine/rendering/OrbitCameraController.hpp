@@ -81,6 +81,15 @@ public:
      */
     void reset() override;
 
+    /**
+     * @brief Configure the home view used by reset().
+     * @param target Home orbit target in world space.
+     * @param distance Home camera distance from target.
+     * @param yawDegrees Home yaw angle in degrees.
+     * @param pitchDegrees Home pitch angle in degrees.
+     */
+    void setHomeView(const glm::vec3& target, float distance, float yawDegrees, float pitchDegrees);
+
     // ============================================================================
     // Target and Distance Control
     // ============================================================================
@@ -212,6 +221,11 @@ private:
     float m_orbitSensitivity = 0.03f;      ///< Mouse sensitivity for orbital movement
     float m_zoomSensitivity = 0.5f;        ///< Sensitivity for zoom in/out operations
     float m_panSensitivity = 0.01f;        ///< Base sensitivity for target panning
+
+    glm::vec3 m_homeTarget{0.0f};          ///< Reset target position
+    float m_homeDistance = 10.0f;          ///< Reset camera distance
+    float m_homeYaw = 0.0f;                ///< Reset yaw angle in degrees
+    float m_homePitch = 20.0f;             ///< Reset pitch angle in degrees
     
     // ============================================================================
     // Input State Tracking

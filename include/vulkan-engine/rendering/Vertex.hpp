@@ -14,15 +14,16 @@
 namespace vkeng {
     /**
      * @struct Vertex
-     * @brief Represents a single vertex with position, color, and texture coordinates.
+     * @brief Represents a single vertex with position, color, texture coordinates, and normal.
      *
      * This struct defines the data layout for a single vertex. The layout must
      * match the input expected by the vertex shader.
      */
     struct Vertex {
-        glm::vec3 pos;      ///< The 3D position of the vertex.
-        glm::vec3 color;    ///< The color of the vertex.
-        glm::vec2 texCoord; ///< The texture coordinates of the vertex.
+        glm::vec3 pos;                           ///< The 3D position of the vertex.
+        glm::vec3 color{1.0f, 1.0f, 1.0f};      ///< Optional vertex color.
+        glm::vec2 texCoord{0.0f, 0.0f};         ///< The texture coordinates of the vertex.
+        glm::vec3 normal{0.0f, 0.0f, 1.0f};     ///< The vertex normal in object space.
 
         /**
          * @brief Gets the binding description for the Vertex struct.
@@ -51,7 +52,10 @@ namespace vkeng {
          * @return True if vertices are equal, false otherwise.
          */
         bool operator==(const Vertex& other) const {
-            return pos == other.pos && color == other.color && texCoord == other.texCoord;
+            return pos == other.pos &&
+                   color == other.color &&
+                   texCoord == other.texCoord &&
+                   normal == other.normal;
         }
     };
 }
@@ -70,9 +74,13 @@ namespace std {
             size_t h6 = hash<float>{}(vertex.color.z);
             size_t h7 = hash<float>{}(vertex.texCoord.x);
             size_t h8 = hash<float>{}(vertex.texCoord.y);
+            size_t h9 = hash<float>{}(vertex.normal.x);
+            size_t h10 = hash<float>{}(vertex.normal.y);
+            size_t h11 = hash<float>{}(vertex.normal.z);
             
             // Use a simple hash combination
-            return h1 ^ (h2 << 1) ^ (h3 << 2) ^ (h4 << 3) ^ (h5 << 4) ^ (h6 << 5) ^ (h7 << 6) ^ (h8 << 7);
+            return h1 ^ (h2 << 1) ^ (h3 << 2) ^ (h4 << 3) ^ (h5 << 4) ^ (h6 << 5) ^
+                   (h7 << 6) ^ (h8 << 7) ^ (h9 << 8) ^ (h10 << 9) ^ (h11 << 10);
         }
     };
 }

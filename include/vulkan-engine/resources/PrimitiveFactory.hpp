@@ -33,6 +33,19 @@ public:
      */
     static std::shared_ptr<Mesh> createCube(std::shared_ptr<MemoryManager> memoryManager);
 
+    /**
+     * @brief Creates a UV sphere with smooth authored normals.
+     * @param memoryManager The memory manager to use for buffer allocation.
+     * @param radius Sphere radius in object space.
+     * @param latitudeSegments Number of vertical subdivisions.
+     * @param longitudeSegments Number of horizontal subdivisions.
+     * @return A shared pointer to the created sphere mesh.
+     */
+    static std::shared_ptr<Mesh> createUvSphere(std::shared_ptr<MemoryManager> memoryManager,
+                                                float radius = 1.0f,
+                                                uint32_t latitudeSegments = 24,
+                                                uint32_t longitudeSegments = 48);
+
     // Other primitives like spheres, cylinders, etc., can be added here later.
 };
 } // namespace vkeng

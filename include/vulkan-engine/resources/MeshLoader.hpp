@@ -5,11 +5,17 @@
 
 namespace vkeng {
 
+enum class MissingNormalMode {
+    Smooth,
+    Flat,
+};
+
 class MeshLoader : public ResourceLoader<Mesh> {
 public:
     explicit MeshLoader(std::shared_ptr<MemoryManager> memoryManager);
 
     Result<std::shared_ptr<Mesh>> load(const std::string& path) override;
+    Result<std::shared_ptr<Mesh>> loadWithOptions(const std::string& path, MissingNormalMode missingNormalMode);
     bool canLoad(const std::string& path) override;
 
 private:

@@ -1,6 +1,6 @@
 # Vulkan Engine
 
-A modern C++17 Vulkan rendering engine designed as both a **learning project** and a **game engine foundation**. Features component-based architecture, camera controls, VMA memory management, and comprehensive logging.
+A modern C++17 Vulkan rendering engine designed as a **game engine foundation**. Features component-based architecture, camera controls, VMA memory management, and comprehensive logging.
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)
@@ -25,6 +25,7 @@ A modern C++17 Vulkan rendering engine designed as both a **learning project** a
 - **RAII Design**: Automatic resource cleanup and exception safety
 - **Component System**: Flexible scene graph with component-based entities
 - **Pipeline Management**: Streamlined graphics pipeline setup and management
+- **Material Foundation**: Factor-based material resources with optional texture slots
 
 ### **Developer Experience**
 - **Structured Logging**: Color-coded, categorized logging system
@@ -70,15 +71,21 @@ mkdir build && cd build
 cmake ..
 make -j$(nproc)
 
-# Run the engine from the build directory
+# Run the sample scene from the build directory
 ./test_scene
+
+# Run the model viewer
+./model_viewer cube.obj
 
 # Or run it from the repository root
 cd ..
 ./build/test_scene
+./build/model_viewer cube.obj
 ```
 
 ## Controls
+
+The model viewer uses orbit controls by default and accepts an optional model path argument.
 
 | Key/Action | FirstPerson Mode | Orbit Mode |
 |------------|------------------|------------|
@@ -93,6 +100,12 @@ cd ..
 | **Arrow Keys** | - | Pan target |
 | **Mouse Wheel** | - | Zoom |
 | **Middle/Right Mouse** | - | Pan (when cursor visible) |
+| **R / F** | - | Reset/frame the loaded model |
+| **1 / 2 / 3** | - | Lit / Unlit / Normal debug shading |
+| **N** | - | Toggle generated smooth vs flat normals for meshes without authored normals |
+| **H** | - | Reprint viewer debug controls to the log |
+
+The model viewer also spawns a smooth reference sphere on the right side of the scene. Use it as a known-good smooth-normal surface when comparing against faceted assets like the cube.
 
 ## Project Structure
 
@@ -130,6 +143,10 @@ vulkanRenderer/
 - **SceneNode**: Hierarchical scene graph with transform inheritance
 - **Component**: Composition-based functionality (MeshRenderer, etc.)
 - **Transform**: 3D transformations with matrix operations
+
+### Resource Layer
+- **Material**: Scalar material factors and optional texture slots for future lit pipelines
+- **Texture**: GPU image plus sampler resource abstraction
 
 ## Configuration
 
@@ -208,6 +225,10 @@ cd shaders/
 cmake -S . -B build
 cmake --build build -j$(nproc)
 ```
+
+## Known Gaps
+
+- Camera controls need a usability pass. The current orbit and first-person controllers are functional for development, but they still feel poor enough that they should be treated as an explicit follow-up task during viewer polish.
 
 ## Troubleshooting
 

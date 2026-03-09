@@ -17,6 +17,7 @@
 #pragma once
 
 #include "vulkan-engine/components/Component.hpp"
+#include "vulkan-engine/resources/Material.hpp"
 #include "vulkan-engine/resources/Mesh.hpp"
 #include <memory>
 
@@ -57,7 +58,7 @@ namespace vkeng {
          * @note Mesh resource should be properly initialized with vertex/index data
          * @warning Passing nullptr will result in undefined rendering behavior
          */
-        explicit MeshRenderer(std::shared_ptr<Mesh> mesh);
+        explicit MeshRenderer(std::shared_ptr<Mesh> mesh, std::shared_ptr<Material> material = nullptr);
 
         /**
          * @brief Get the associated mesh resource
@@ -67,6 +68,12 @@ namespace vkeng {
          * reading geometry data during rendering operations.
          */
         std::shared_ptr<Mesh> getMesh() const { return m_mesh; }
+
+        /**
+         * @brief Get the associated material resource.
+         * @return Shared pointer to the current material resource, or nullptr.
+         */
+        std::shared_ptr<Material> getMaterial() const { return m_material; }
         
         /**
          * @brief Set a new mesh resource for this renderer
@@ -80,12 +87,19 @@ namespace vkeng {
          */
         void setMesh(std::shared_ptr<Mesh> mesh) { m_mesh = mesh; }
 
+        /**
+         * @brief Set a new material resource for this renderer.
+         * @param material New material resource to associate with this renderer.
+         */
+        void setMaterial(std::shared_ptr<Material> material) { m_material = material; }
+
     private:
         // ============================================================================
         // Mesh Resource Storage
         // ============================================================================
         
-        std::shared_ptr<Mesh> m_mesh;    ///< Shared mesh resource for rendering
+        std::shared_ptr<Mesh> m_mesh;            ///< Shared mesh resource for rendering
+        std::shared_ptr<Material> m_material;    ///< Optional material resource for future shading systems
     };
 
 } // namespace vkeng

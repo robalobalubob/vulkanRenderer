@@ -33,8 +33,14 @@ OrbitCameraController::OrbitCameraController(Camera& camera, InputManager& input
     m_pitch = glm::degrees(asin(direction.y));
     m_yaw = glm::degrees(atan2(direction.z, direction.x));
 
-    // Apply default settings and update camera position
-    reset();
+    m_pitch = glm::clamp(m_pitch, -85.0f, 85.0f);
+    m_distance = glm::max(m_distance, 0.5f);
+    m_homeTarget = m_target;
+    m_homeDistance = m_distance;
+    m_homeYaw = m_yaw;
+    m_homePitch = m_pitch;
+
+    updateCameraPosition();
 }
 
 /**
@@ -45,11 +51,18 @@ OrbitCameraController::OrbitCameraController(Camera& camera, InputManager& input
  * to a known camera state.
  */
 void OrbitCameraController::reset() {
-    m_target = glm::vec3(0.0f);     // Target at world origin
-    m_distance = 10.0f;             // Reasonable default distance
-    m_yaw = 0.0f;                   // Facing positive X direction
-    m_pitch = 20.0f;                // Slight downward angle for better view
+    m_target = m_homeTarget;
+    m_distance = m_homeDistance;
+    m_yaw = m_homeYaw;
+    m_pitch = m_homePitch;
     updateCameraPosition();
+}
+
+void OrbitCameraController::setHomeView(const glm::vec3& target, float distance, float yawDegrees, float pitchDegrees) {
+    m_homeTarget = target;
+    m_homeDistance = glm::max(distance, 0.5f);
+    m_homeYaw = yawDegrees;
+    m_homePitch = glm::clamp(pitchDegrees, -85.0f, 85.0f);
 }
 
 // ============================================================================

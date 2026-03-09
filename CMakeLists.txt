@@ -86,9 +86,7 @@ add_custom_target(prepare_runtime_content
         compile_shaders
         stage_assets)
 
-add_executable(test_scene 
-src/main.cpp
-src/HelloTriangleApp.cpp
+set(VKENG_ENGINE_SOURCES
 src/components/MeshRenderer.cpp
 src/core/InputManager.cpp
 src/core/GlfwWindow.cpp
@@ -112,6 +110,7 @@ src/rendering/CommandPool.cpp
 src/rendering/CommandBuffer.cpp
 src/rendering/DescriptorSet.cpp
 src/rendering/Vertex.cpp
+src/resources/Material.cpp
 src/resources/Mesh.cpp
 src/resources/MeshLoader.cpp
 src/resources/PrimitiveFactory.cpp
@@ -121,18 +120,32 @@ src/resources/TextureLoader.cpp
 src/scene/SceneNode.cpp
 )
 
-add_dependencies(test_scene prepare_runtime_content)
-
-target_compile_definitions(test_scene
-    PRIVATE
-        VKENG_SHADER_OUTPUT_DIR=\"${VKENG_SHADER_OUTPUT_DIR}\"
-    VKENG_ASSET_OUTPUT_DIR=\"${VKENG_ASSET_OUTPUT_DIR}\"
+add_executable(test_scene 
+src/main.cpp
+src/HelloTriangleApp.cpp
+${VKENG_ENGINE_SOURCES}
 )
 
-target_link_libraries(test_scene
-    PRIVATE
-        Vulkan::Vulkan        # your Vulkan loader
-        glfw                  # GLFW windowing
-        glm::glm              # GLM header-only (imported target)
-        VulkanMemoryAllocator # the VMA library target
+add_executable(model_viewer
+src/model_viewer_main.cpp
+src/ModelViewerApp.cpp
+${VKENG_ENGINE_SOURCES}
 )
+
+foreach(vkeng_app IN ITEMS test_scene model_viewer)
+    add_dependencies(${vkeng_app} prepare_runtime_content)
+
+    target_compile_definitions(${vkeng_app}
+        PRIVATE
+            VKENG_SHADER_OUTPUT_DIR=\"${VKENG_SHADER_OUTPUT_DIR}\"
+            VKENG_ASSET_OUTPUT_DIR=\"${VKENG_ASSET_OUTPUT_DIR}\"
+    )
+
+    target_link_libraries(${vkeng_app}
+        PRIVATE
+            Vulkan::Vulkan        # your Vulkan loader
+            glfw                  # GLFW windowing
+            glm::glm              # GLM header-only (imported target)
+            VulkanMemoryAllocator # the VMA library target
+    )
+endforeach()

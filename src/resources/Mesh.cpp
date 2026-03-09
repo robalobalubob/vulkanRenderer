@@ -1,5 +1,8 @@
 #include "vulkan-engine/resources/Mesh.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace vkeng {
 
     /**
@@ -8,15 +11,44 @@ namespace vkeng {
     Mesh::Mesh(const std::string& name,
            std::shared_ptr<MemoryManager> memoryManager, 
            const std::vector<Vertex>& vertices, 
-           const std::vector<uint32_t>& indices)
+              const std::vector<uint32_t>& indices,
+              MeshNormalSource normalSource)
         : Resource(name), // <-- Call the base class constructor
-        m_memoryManager(memoryManager) {
+          m_memoryManager(memoryManager),
+          m_normalSource(normalSource) {
 
         m_vertexCount = static_cast<uint32_t>(vertices.size());
         m_indexCount = static_cast<uint32_t>(indices.size());
 
+        calculateBounds(vertices);
         createVertexBuffers(vertices);
         createIndexBuffers(indices);
+    }
+
+    void Mesh::calculateBounds(const std::vector<Vertex>& vertices) {
+        if (vertices.empty()) {
+            m_boundsMin = glm::vec3(0.0f);
+            m_boundsMax = glm::vec3(0.0f);
+            m_boundingRadius = 0.0f;
+            return;
+        }
+
+        m_boundsMin = vertices.front().pos;
+        m_boundsMax = vertices.front().pos;
+
+        for (const auto& vertex : vertices) {
+            m_boundsMin = glm::min(m_boundsMin, vertex.pos);
+            m_boundsMax = glm::max(m_boundsMax, vertex.pos);
+        }
+
+        const glm::vec3 center = getBoundsCenter();
+        float maxRadiusSquared = 0.0f;
+        for (const auto& vertex : vertices) {
+            const glm::vec3 delta = vertex.pos - center;
+            maxRadiusSquared = std::max(maxRadiusSquared, glm::dot(delta, delta));
+        }
+
+        m_boundingRadius = std::sqrt(maxRadiusSquared);
     }
 
     /**

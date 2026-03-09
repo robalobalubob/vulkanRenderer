@@ -24,6 +24,7 @@ namespace vkeng {
  * 
  * @param mesh Shared pointer to the Mesh resource for rendering
  */
-MeshRenderer::MeshRenderer(std::shared_ptr<Mesh> mesh) : m_mesh(mesh) {}
+MeshRenderer::MeshRenderer(std::shared_ptr<Mesh> mesh, std::shared_ptr<Material> material)
+	: m_mesh(std::move(mesh)), m_material(std::move(material)) {}
 
 } // namespace vkeng

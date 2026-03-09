@@ -22,6 +22,7 @@
 #include "vulkan-engine/rendering/Pipeline.hpp"
 #include "vulkan-engine/rendering/RenderPass.hpp"
 #include "vulkan-engine/rendering/CommandPool.hpp"
+#include "vulkan-engine/rendering/Uniforms.hpp"
 #include <functional>
 #include <memory>
 #include <vector>
@@ -97,6 +98,9 @@ namespace vkeng {
          * Allows the app to recreate RenderPass and Pipeline.
          */
         using RecreateCallback = std::function<void(uint32_t width, uint32_t height)>;
+
+        void setDebugShadingMode(DebugShadingMode mode) { m_debugShadingMode = mode; }
+        DebugShadingMode getDebugShadingMode() const { return m_debugShadingMode; }
 
         /**
          * @brief Sets the callback for swapchain recreation.
@@ -250,6 +254,8 @@ namespace vkeng {
         
         /// Last known window height for polling-based resize detection (WSL2/WSLg workaround)
         int m_lastKnownHeight = 0;
+
+        DebugShadingMode m_debugShadingMode = DebugShadingMode::Lit;
 
         // ============================================================================
         // Multi-Frame Synchronization
