@@ -217,8 +217,8 @@ namespace vkeng {
     }
 
     void VulkanSwapChain::createDepthResources() {
-        VkFormat depthFormat = findDepthFormat();
-        auto result = memoryManager_->createDepthBuffer(extent_.width, extent_.height, depthFormat);
+        depthFormat_ = findDepthFormat();
+        auto result = memoryManager_->createDepthBuffer(extent_.width, extent_.height, depthFormat_);
         if (!result) {
             throw std::runtime_error("Failed to create depth buffer: " + result.getError().message);
         }

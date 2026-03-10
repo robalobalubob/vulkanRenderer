@@ -133,7 +133,7 @@ void HelloTriangleApp::onInit() {
 
 void HelloTriangleApp::initRenderingPipeline() {
     // 1. Create RenderPass
-    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), VK_FORMAT_D32_SFLOAT);
+    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
     // 2. Create Layouts
     createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_);
@@ -154,15 +154,15 @@ void HelloTriangleApp::initRenderingPipeline() {
     const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
     mesh_ = std::make_shared<Mesh>("debug_triangle", memoryManager_, vertices, indices);
 
-    uniformBuffers_.resize(swapChain_->imageViews().size());
-    for (size_t i = 0; i < swapChain_->imageViews().size(); i++) {
+    uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+    for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
         auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
         if (!bufferResult) throw std::runtime_error("failed to create uniform buffer!");
         uniformBuffers_[i] = bufferResult.getValue();
     }
 
-    createDescriptorPool(device_->getDevice(), swapChain_->imageViews().size(), &descriptorPool_);
-    createDescriptorSets(device_->getDevice(), swapChain_->imageViews().size(), descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+    createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
+    createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
 
     // 5. Create Renderer
     renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, pipeline_);
@@ -178,7 +178,7 @@ void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
     LOG_INFO(GENERAL, "Recreating resources for size {}x{}", width, height);
 
     // 1. Recreate RenderPass
-    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), VK_FORMAT_D32_SFLOAT);
+    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
     // 2. Recreate Pipeline
     const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
@@ -193,16 +193,15 @@ void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
     uniformBuffers_.clear();
 
     // Recreate
-    size_t imageCount = swapChain_->imageViews().size();
-    uniformBuffers_.resize(imageCount);
-    for (size_t i = 0; i < imageCount; i++) {
+    uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+    for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
         auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
         if (!bufferResult) throw std::runtime_error("failed to create uniform buffer!");
         uniformBuffers_[i] = bufferResult.getValue();
     }
 
-    createDescriptorPool(device_->getDevice(), static_cast<uint32_t>(imageCount), &descriptorPool_);
-    createDescriptorSets(device_->getDevice(), static_cast<uint32_t>(imageCount), descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+    createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
+    createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
 
     // 4. Update Renderer
     renderer_->setRenderPass(renderPass_);

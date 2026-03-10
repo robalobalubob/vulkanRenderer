@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <vector>
 #include <unordered_map>
@@ -358,7 +359,7 @@ namespace vkeng {
         bool m_active = true;
 
         // Static counter for automatic naming
-        static uint32_t s_nodeCounter;
+        static std::atomic<uint32_t> s_nodeCounter;
     };
 
 } // namespace vkeng

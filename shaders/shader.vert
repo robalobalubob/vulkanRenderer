@@ -28,7 +28,10 @@ layout(location = 2) out vec3 fragWorldNormal;
 
 void main() {
     vec4 worldPosition = pushConstants.modelMatrix * vec4(inPosition, 1.0);
-    mat3 normalMatrix = transpose(inverse(mat3(pushConstants.modelMatrix)));
+
+    // Normal matrix: for uniform scale + rotation, mat3(model) is sufficient.
+    // The full transpose(inverse(mat3(model))) is only needed for non-uniform scaling.
+    mat3 normalMatrix = mat3(pushConstants.modelMatrix);
 
     fragWorldPosition = worldPosition.xyz;
     fragWorldNormal = normalize(normalMatrix * inNormal);

@@ -191,13 +191,15 @@ void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
     }
 
     // 6. Advance to the next FRAME IN FLIGHT.
-    m_currentFrame = (m_currentFrame + 1) % m_frames.size();
+    m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& rootNode, Camera& camera,
                                  const std::vector<VkDescriptorSet>& descriptorSets,
                                  const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
-    updateGlobalUbo(imageIndex, camera, uniformBuffers);
+    // Use m_currentFrame (not imageIndex) for per-frame resources.
+    // imageIndex is only used for selecting the framebuffer.
+    updateGlobalUbo(m_currentFrame, camera, uniformBuffers);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -240,7 +242,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getLayout(), 0, 1, &descriptorSets[imageIndex], 0, nullptr);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getLayout(), 0, 1, &descriptorSets[m_currentFrame], 0, nullptr);
     renderNode(commandBuffer, m_pipeline->getLayout(), rootNode);
 
     vkCmdEndRenderPass(commandBuffer);
@@ -333,7 +335,7 @@ void Renderer::createFramebuffers() {
 }
 
 void Renderer::createCommandBuffers() {
-    m_frames.resize(m_swapChain.imageViews().size());
+    m_frames.resize(MAX_FRAMES_IN_FLIGHT);
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = m_commandPool->getPool();

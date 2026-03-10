@@ -7,9 +7,6 @@ find_package(Vulkan REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
 find_package(glm REQUIRED)
 
-include_directories(include)
-include_directories(third_party/include)
-
 # Pull in VMA
 add_subdirectory(third_party/vma)
 
@@ -86,54 +83,77 @@ add_custom_target(prepare_runtime_content
         compile_shaders
         stage_assets)
 
-set(VKENG_ENGINE_SOURCES
-src/components/MeshRenderer.cpp
-src/core/InputManager.cpp
-src/core/GlfwWindow.cpp
-src/core/Engine.cpp
-src/core/Logger.cpp
-src/core/VulkanInstance.cpp
-src/core/VulkanDevice.cpp
-src/core/VulkanSwapChain.cpp
-src/core/Result.cpp
-src/core/VmaImplementation.cpp
-src/core/MemoryManager.cpp
-src/core/Buffer.cpp
-src/math/Transform.cpp
-src/rendering/Camera.cpp
-src/rendering/FirstPersonCameraController.cpp
-src/rendering/OrbitCameraController.cpp
-src/rendering/RenderPass.cpp
-src/rendering/Pipeline.cpp
-src/rendering/Renderer.cpp
-src/rendering/CommandPool.cpp
-src/rendering/CommandBuffer.cpp
-src/rendering/DescriptorSet.cpp
-src/rendering/Vertex.cpp
-src/resources/Material.cpp
-src/resources/Mesh.cpp
-src/resources/MeshLoader.cpp
-src/resources/PrimitiveFactory.cpp
-src/resources/ResourceManager.cpp
-src/resources/Texture.cpp
-src/resources/TextureLoader.cpp
-src/scene/SceneNode.cpp
+# ============================================================================
+# Engine static library — compiled once, linked by all executables
+# ============================================================================
+
+add_library(vulkan-engine STATIC
+    src/components/MeshRenderer.cpp
+    src/core/InputManager.cpp
+    src/core/GlfwWindow.cpp
+    src/core/Engine.cpp
+    src/core/Logger.cpp
+    src/core/VulkanInstance.cpp
+    src/core/VulkanDevice.cpp
+    src/core/VulkanSwapChain.cpp
+    src/core/Result.cpp
+    src/core/VmaImplementation.cpp
+    src/core/MemoryManager.cpp
+    src/core/Buffer.cpp
+    src/math/Transform.cpp
+    src/rendering/Camera.cpp
+    src/rendering/FirstPersonCameraController.cpp
+    src/rendering/OrbitCameraController.cpp
+    src/rendering/RenderPass.cpp
+    src/rendering/Pipeline.cpp
+    src/rendering/Renderer.cpp
+    src/rendering/CommandPool.cpp
+    src/rendering/CommandBuffer.cpp
+    src/rendering/DescriptorSet.cpp
+    src/rendering/Vertex.cpp
+    src/resources/Material.cpp
+    src/resources/Mesh.cpp
+    src/resources/MeshLoader.cpp
+    src/resources/PrimitiveFactory.cpp
+    src/resources/ResourceManager.cpp
+    src/resources/Texture.cpp
+    src/resources/TextureLoader.cpp
+    src/scene/SceneNode.cpp
 )
 
-add_executable(test_scene 
-src/main.cpp
-src/HelloTriangleApp.cpp
-${VKENG_ENGINE_SOURCES}
+target_include_directories(vulkan-engine
+    PUBLIC  include
+    PRIVATE third_party/include
+)
+
+target_link_libraries(vulkan-engine
+    PUBLIC
+        Vulkan::Vulkan
+        glfw
+        glm::glm
+        VulkanMemoryAllocator
+)
+
+# ============================================================================
+# Application executables
+# ============================================================================
+
+add_executable(test_scene
+    src/main.cpp
+    src/HelloTriangleApp.cpp
 )
 
 add_executable(model_viewer
-src/model_viewer_main.cpp
-src/ModelViewerApp.cpp
-${VKENG_ENGINE_SOURCES}
+    src/model_viewer_main.cpp
+    src/ModelViewerApp.cpp
 )
 
 foreach(vkeng_app IN ITEMS test_scene model_viewer)
     add_dependencies(${vkeng_app} prepare_runtime_content)
+
+    target_include_directories(${vkeng_app}
+        PRIVATE third_party/include
+    )
 
     target_compile_definitions(${vkeng_app}
         PRIVATE
@@ -143,9 +163,6 @@ foreach(vkeng_app IN ITEMS test_scene model_viewer)
 
     target_link_libraries(${vkeng_app}
         PRIVATE
-            Vulkan::Vulkan        # your Vulkan loader
-            glfw                  # GLFW windowing
-            glm::glm              # GLM header-only (imported target)
-            VulkanMemoryAllocator # the VMA library target
+            vulkan-engine
     )
 endforeach()

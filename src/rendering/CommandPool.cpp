@@ -78,22 +78,33 @@ namespace vkeng {
             return Result<void>(Error("Failed to end command buffer", result));
         }
 
+        // Create a fence so we wait only for this specific submission, not the entire queue
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        VkFence fence = VK_NULL_HANDLE;
+        result = vkCreateFence(device_, &fenceInfo, nullptr, &fence);
+        if (result != VK_SUCCESS) {
+            vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
+            return Result<void>(Error("Failed to create fence for single-time commands", result));
+        }
+
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
 
-        // Submit the command buffer to the graphics queue and wait for it to finish
-        result = vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+        result = vkQueueSubmit(queue, 1, &submitInfo, fence);
         if (result != VK_SUCCESS) {
+            vkDestroyFence(device_, fence, nullptr);
             vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
             return Result<void>(Error("Failed to submit command buffer", result));
         }
 
-        result = vkQueueWaitIdle(queue);
+        result = vkWaitForFences(device_, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDestroyFence(device_, fence, nullptr);
         if (result != VK_SUCCESS) {
             vkFreeCommandBuffers(device_, commandPool_, 1, &commandBuffer);
-            return Result<void>(Error("Failed to wait for transfer queue idle", result));
+            return Result<void>(Error("Failed to wait for single-time command fence", result));
         }
 
         // Free the command buffer

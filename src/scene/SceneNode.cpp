@@ -7,7 +7,7 @@ namespace vkeng {
     // Static Members
     // ============================================================================
 
-    uint32_t SceneNode::s_nodeCounter = 0;
+    std::atomic<uint32_t> SceneNode::s_nodeCounter{0};
 
     // ============================================================================
     // Constructor & Destructor

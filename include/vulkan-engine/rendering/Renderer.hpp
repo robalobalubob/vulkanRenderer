@@ -56,6 +56,10 @@ namespace vkeng {
      */
     class Renderer {
     public:
+        /// Maximum number of frames that can be processed concurrently.
+        /// Independent of how many swapchain images the driver provides.
+        static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
+
         // ============================================================================
         // Constructor and Destructor
         // ============================================================================

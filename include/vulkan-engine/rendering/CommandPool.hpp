@@ -44,8 +44,23 @@ namespace vkeng {
         // disable copying, enable (or delete) moves
         CommandPool(const CommandPool&) = delete;
         CommandPool& operator=(const CommandPool&) = delete;
-        CommandPool(CommandPool&&) noexcept = default;
-        CommandPool& operator=(CommandPool&&) noexcept = default;
+        CommandPool(CommandPool&& other) noexcept
+            : device_(other.device_), commandPool_(other.commandPool_) {
+            other.device_ = VK_NULL_HANDLE;
+            other.commandPool_ = VK_NULL_HANDLE;
+        }
+        CommandPool& operator=(CommandPool&& other) noexcept {
+            if (this != &other) {
+                if (commandPool_ != VK_NULL_HANDLE) {
+                    vkDestroyCommandPool(device_, commandPool_, nullptr);
+                }
+                device_ = other.device_;
+                commandPool_ = other.commandPool_;
+                other.device_ = VK_NULL_HANDLE;
+                other.commandPool_ = VK_NULL_HANDLE;
+            }
+            return *this;
+        }
 
         /**
          * @brief Begins a command buffer for a single, one-time submission.

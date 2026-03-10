@@ -62,8 +62,23 @@ namespace vkeng {
         // Non-copyable, movable
         RenderPass(const RenderPass&) = delete;
         RenderPass& operator=(const RenderPass&) = delete;
-        RenderPass(RenderPass&&) noexcept = default;
-        RenderPass& operator=(RenderPass&&) noexcept = default;
+        RenderPass(RenderPass&& other) noexcept
+            : device_(other.device_), renderPass_(other.renderPass_) {
+            other.device_ = VK_NULL_HANDLE;
+            other.renderPass_ = VK_NULL_HANDLE;
+        }
+        RenderPass& operator=(RenderPass&& other) noexcept {
+            if (this != &other) {
+                if (renderPass_ != VK_NULL_HANDLE) {
+                    vkDestroyRenderPass(device_, renderPass_, nullptr);
+                }
+                device_ = other.device_;
+                renderPass_ = other.renderPass_;
+                other.device_ = VK_NULL_HANDLE;
+                other.renderPass_ = VK_NULL_HANDLE;
+            }
+            return *this;
+        }
     
         /** @brief Gets the raw Vulkan render pass handle for framebuffer/pipeline creation. */
         VkRenderPass get() const { return renderPass_; }

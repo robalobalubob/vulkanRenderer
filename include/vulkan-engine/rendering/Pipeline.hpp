@@ -81,8 +81,34 @@ namespace vkeng {
         // Disable copying, enable moving for RAII resource management
         Pipeline(const Pipeline&) = delete;
         Pipeline& operator=(const Pipeline&) = delete;
-        Pipeline(Pipeline&&) noexcept = default;
-        Pipeline& operator=(Pipeline&&) noexcept = default;
+        Pipeline(Pipeline&& other) noexcept
+            : device_(other.device_), pipeline_(other.pipeline_), layout_(other.layout_),
+              renderPass_(other.renderPass_), extent_(other.extent_),
+              vertPath_(std::move(other.vertPath_)), fragPath_(std::move(other.fragPath_)) {
+            other.device_ = VK_NULL_HANDLE;
+            other.pipeline_ = VK_NULL_HANDLE;
+            other.layout_ = VK_NULL_HANDLE;
+            other.renderPass_ = VK_NULL_HANDLE;
+        }
+        Pipeline& operator=(Pipeline&& other) noexcept {
+            if (this != &other) {
+                if (pipeline_ != VK_NULL_HANDLE) {
+                    vkDestroyPipeline(device_, pipeline_, nullptr);
+                }
+                device_ = other.device_;
+                pipeline_ = other.pipeline_;
+                layout_ = other.layout_;
+                renderPass_ = other.renderPass_;
+                extent_ = other.extent_;
+                vertPath_ = std::move(other.vertPath_);
+                fragPath_ = std::move(other.fragPath_);
+                other.device_ = VK_NULL_HANDLE;
+                other.pipeline_ = VK_NULL_HANDLE;
+                other.layout_ = VK_NULL_HANDLE;
+                other.renderPass_ = VK_NULL_HANDLE;
+            }
+            return *this;
+        }
 
         // ============================================================================
         // Pipeline Access Methods

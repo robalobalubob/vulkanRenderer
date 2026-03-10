@@ -221,7 +221,7 @@ void ModelViewerApp::onShutdown() {
 }
 
 void ModelViewerApp::initRenderingPipeline() {
-    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), VK_FORMAT_D32_SFLOAT);
+    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
     createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_);
 
@@ -229,8 +229,8 @@ void ModelViewerApp::initRenderingPipeline() {
     const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
     pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), vertPath, fragPath);
 
-    uniformBuffers_.resize(swapChain_->imageViews().size());
-    for (size_t i = 0; i < swapChain_->imageViews().size(); i++) {
+    uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+    for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
         auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
         if (!bufferResult) {
             throw std::runtime_error("failed to create uniform buffer!");
@@ -238,8 +238,8 @@ void ModelViewerApp::initRenderingPipeline() {
         uniformBuffers_[i] = bufferResult.getValue();
     }
 
-    createDescriptorPool(device_->getDevice(), static_cast<uint32_t>(swapChain_->imageViews().size()), &descriptorPool_);
-    createDescriptorSets(device_->getDevice(), static_cast<uint32_t>(swapChain_->imageViews().size()), descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+    createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
+    createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
 
     renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, pipeline_);
     renderer_->setRecreateCallback([this](uint32_t width, uint32_t height) {
@@ -404,7 +404,7 @@ void ModelViewerApp::logViewerControls() const {
 void ModelViewerApp::recreateResources(uint32_t width, uint32_t height) {
     LOG_INFO(GENERAL, "Recreating model viewer resources for size {}x{}", width, height);
 
-    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), VK_FORMAT_D32_SFLOAT);
+    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
     const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
     const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
@@ -415,9 +415,8 @@ void ModelViewerApp::recreateResources(uint32_t width, uint32_t height) {
     }
     uniformBuffers_.clear();
 
-    const size_t imageCount = swapChain_->imageViews().size();
-    uniformBuffers_.resize(imageCount);
-    for (size_t i = 0; i < imageCount; i++) {
+    uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
+    for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
         auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
         if (!bufferResult) {
             throw std::runtime_error("failed to create uniform buffer!");
@@ -425,8 +424,8 @@ void ModelViewerApp::recreateResources(uint32_t width, uint32_t height) {
         uniformBuffers_[i] = bufferResult.getValue();
     }
 
-    createDescriptorPool(device_->getDevice(), static_cast<uint32_t>(imageCount), &descriptorPool_);
-    createDescriptorSets(device_->getDevice(), static_cast<uint32_t>(imageCount), descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+    createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
+    createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
 
     renderer_->setRenderPass(renderPass_);
     renderer_->setPipeline(pipeline_);

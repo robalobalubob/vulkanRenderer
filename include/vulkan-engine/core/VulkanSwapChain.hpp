@@ -103,6 +103,9 @@ namespace vkeng {
         /** @brief Gets the depth image view for depth testing. */
         VkImageView depthImageView() const { return depthImageView_; }
 
+        /** @brief Gets the depth format chosen for this device. */
+        VkFormat depthFormat() const { return depthFormat_; }
+
         // ============================================================================
         // Swapchain Management
         // ============================================================================
@@ -191,5 +194,6 @@ namespace vkeng {
         
         std::shared_ptr<Image> depthImage_;             ///< Depth buffer image (owns the VkImage and VkImageView)
         VkImageView depthImageView_ = VK_NULL_HANDLE;   ///< Cached depth image view (owned by depthImage_)
+        VkFormat depthFormat_ = VK_FORMAT_UNDEFINED;     ///< Runtime-selected depth format
     };
 } // namespace vkeng
