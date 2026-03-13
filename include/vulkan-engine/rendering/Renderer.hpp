@@ -106,6 +106,8 @@ namespace vkeng {
         void setDebugShadingMode(DebugShadingMode mode) { m_debugShadingMode = mode; }
         DebugShadingMode getDebugShadingMode() const { return m_debugShadingMode; }
 
+        void setFallbackTextureDescriptorSet(VkDescriptorSet set) { m_fallbackTextureDescriptorSet = set; }
+
         /**
          * @brief Sets the callback for swapchain recreation.
          * @param callback Function to call when swapchain is recreated
@@ -223,6 +225,8 @@ namespace vkeng {
         void updateGlobalUbo(uint32_t currentImage, Camera& camera,
                                  const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
 
+        void renderNode(VkCommandBuffer commandBuffer, const SceneNode& node);
+
         // ============================================================================
         // Core Vulkan Object References
         // ============================================================================
@@ -260,6 +264,8 @@ namespace vkeng {
         int m_lastKnownHeight = 0;
 
         DebugShadingMode m_debugShadingMode = DebugShadingMode::Lit;
+
+        VkDescriptorSet m_fallbackTextureDescriptorSet = VK_NULL_HANDLE;
 
         // ============================================================================
         // Multi-Frame Synchronization

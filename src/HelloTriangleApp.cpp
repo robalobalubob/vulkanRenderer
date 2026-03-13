@@ -3,6 +3,7 @@
 #include "vulkan-engine/resources/Mesh.hpp"
 #include "vulkan-engine/resources/PrimitiveFactory.hpp"
 #include "vulkan-engine/resources/MeshLoader.hpp"
+#include "vulkan-engine/resources/TextureLoader.hpp"
 #include "vulkan-engine/resources/ResourceManager.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
@@ -90,7 +91,7 @@ std::filesystem::path resolveAssetBasePath(const std::string& configuredPath) {
 } // namespace
 
 // Helper function declarations
-void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout);
+void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout, VkDescriptorSetLayout textureSetLayout);
 void createDescriptorPool(VkDevice device, uint32_t frameCount, VkDescriptorPool* descriptorPool);
 void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool descriptorPool,
                           VkDescriptorSetLayout descriptorSetLayout, const std::vector<std::shared_ptr<Buffer>>& uniformBuffers,
@@ -109,6 +110,9 @@ void HelloTriangleApp::onShutdown() {
     vkDeviceWaitIdle(device_->getDevice());
 
     ResourceManager::get().clearResources();
+    defaultMaterial_.reset();
+    materialDescriptorPool_.reset();
+    textureSetLayout_.reset();
 
     if (pipelineLayout_ != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device_->getDevice(), pipelineLayout_, nullptr);
@@ -135,8 +139,12 @@ void HelloTriangleApp::initRenderingPipeline() {
     // 1. Create RenderPass
     renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
-    // 2. Create Layouts
-    createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_);
+    // 2. Create texture descriptor set layout (set 1) and material descriptor pool
+    textureSetLayout_ = DescriptorManager::get().createTextureLayout(1, VK_SHADER_STAGE_FRAGMENT_BIT);
+    materialDescriptorPool_ = DescriptorManager::get().createPool(32);
+
+    // 3. Create Layouts (UBO set 0 + texture set 1)
+    createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_, textureSetLayout_->getHandle());
 
     // 3. Create Pipeline
     const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
@@ -146,10 +154,10 @@ void HelloTriangleApp::initRenderingPipeline() {
 
     // 4. Create Mesh and UBOs (This is part of the "Scene" really, but tied to the pipeline setup)
     const std::vector<Vertex> vertices = {
-        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}}
+        {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
+        {{0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
+        {{0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}
     };
     const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
     mesh_ = std::make_shared<Mesh>("debug_triangle", memoryManager_, vertices, indices);
@@ -167,8 +175,19 @@ void HelloTriangleApp::initRenderingPipeline() {
     // 5. Create Renderer
     renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, pipeline_);
 
-    // 6. Set Callback
-    // 6. Set Callback
+    // 6. Create fallback texture descriptor set
+    {
+        auto setResult = materialDescriptorPool_->allocateDescriptorSet(textureSetLayout_);
+        if (!setResult) throw std::runtime_error("Failed to allocate fallback texture descriptor set");
+        fallbackTextureDescriptorSet_ = setResult.getValue();
+
+        DescriptorSet fallbackDescSet(device_->getDevice(), fallbackTextureDescriptorSet_, textureSetLayout_);
+        fallbackDescSet.writeImage(0, fallbackTexture_->getImage(), fallbackTexture_->getSampler());
+        fallbackDescSet.update();
+    }
+    renderer_->setFallbackTextureDescriptorSet(fallbackTextureDescriptorSet_);
+
+    // 7. Set Callback
     renderer_->setRecreateCallback([this](uint32_t width, uint32_t height) {
         recreateResources(width, height);
     });
@@ -212,37 +231,37 @@ void HelloTriangleApp::initScene() {
    // --- Activate the Resource Manager ---
     ResourceManager::get().registerLoader<Mesh>(std::make_unique<MeshLoader>(memoryManager_));
 
-    // --- Load a mesh from a file ---
-    // Use config assets path
-    const auto assetBasePath = resolveAssetBasePath(config_.assets.assetsPath);
-    const auto cubePath = assetBasePath / "cube.obj";
-    LOG_INFO(GENERAL, "Loading scene assets from {}", assetBasePath.string());
-    auto cubeHandle = ResourceManager::get().loadResource<Mesh>(cubePath);
-    
-    // Fallback if load fails (or just error out)
-    if (!cubeHandle.isValid()) {
-        LOG_ERROR(GENERAL, "Failed to load cube model from {}", cubePath.string());
-        // throw std::runtime_error("Failed to load cube model!"); 
-        // Don't throw, just log for now to allow running without assets if needed
-    }
-    auto cubeMesh = ResourceManager::get().getResource(cubeHandle);
+    // --- Create default material with descriptor set ---
+    defaultMaterial_ = std::make_shared<Material>("default_material");
 
-    // --- Use a procedural mesh ---
+    // --- Load test texture ---
+    const auto assetBasePath = resolveAssetBasePath(config_.assets.assetsPath);
+    auto textureLoader = std::make_unique<TextureLoader>(memoryManager_, *device_);
+    auto texResult = textureLoader->load((assetBasePath / "testPNG.png").string());
+    if (texResult) {
+        defaultMaterial_->setBaseColorTexture(texResult.getValue());
+        LOG_INFO(GENERAL, "Loaded test texture: testPNG.png");
+    } else {
+        LOG_WARN(GENERAL, "Failed to load test texture, using fallback white");
+    }
+
+    defaultMaterial_->createDescriptorSet(device_->getDevice(), materialDescriptorPool_, textureSetLayout_, fallbackTexture_);
+
+    // --- Create meshes ---
     auto squareMesh = PrimitiveFactory::createQuad(memoryManager_);
+    auto cubeMesh = PrimitiveFactory::createCube(memoryManager_);
 
     // --- Build the Scene ---
     rootNode_ = std::make_shared<SceneNode>("Root");
 
     auto squareNode = std::make_shared<SceneNode>("Square");
     squareNode->getTransform().setPosition(-1.5f, 0.0f, 0.0f);
-    squareNode->addComponent<MeshRenderer>(squareMesh);
+    squareNode->addComponent<MeshRenderer>(squareMesh, defaultMaterial_);
     rootNode_->addChild(squareNode);
 
     auto cubeNode = std::make_shared<SceneNode>("Cube");
     cubeNode->getTransform().setPosition(1.5f, 0.0f, 0.0f);
-    if (cubeMesh) {
-        cubeNode->addComponent<MeshRenderer>(cubeMesh);
-    }
+    cubeNode->addComponent<MeshRenderer>(cubeMesh, defaultMaterial_);
     rootNode_->addChild(cubeNode);
 
     camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float)swapChain_->extent().height, 0.1f, 10.0f);
@@ -294,7 +313,7 @@ void HelloTriangleApp::onRender() {
 }
 
 // --- Helper Implementations ---
-void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout) {
+void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout, VkDescriptorSetLayout textureSetLayout) {
     // --- Create Descriptor Set Layout ---
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
@@ -317,10 +336,11 @@ void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, 
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(MeshPushConstants);
 
+    VkDescriptorSetLayout setLayouts[] = { *descriptorSetLayout, textureSetLayout };
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = descriptorSetLayout; // Use the layout we just created
+    pipelineLayoutInfo.setLayoutCount = 2;
+    pipelineLayoutInfo.pSetLayouts = setLayouts;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 

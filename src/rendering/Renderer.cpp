@@ -12,6 +12,7 @@
 #include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
 #include "vulkan-engine/resources/Mesh.hpp"
+#include "vulkan-engine/resources/Material.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/core/Buffer.hpp"
 #include "vulkan-engine/rendering/CommandPool.hpp"
@@ -20,18 +21,6 @@
 #include <stdexcept>
 
 namespace vkeng {
-
-// ============================================================================
-// Helper Function Declarations
-// ============================================================================
-
-/**
- * @brief Recursively renders a scene node and its children
- * @param commandBuffer Command buffer to record rendering commands into
- * @param pipelineLayout Pipeline layout for push constant updates
- * @param node Scene node to render (processes MeshRenderer components)
- */
-void renderNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, const SceneNode& node);
 
 // ============================================================================
 // Constructor and Destructor
@@ -243,7 +232,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getLayout(), 0, 1, &descriptorSets[m_currentFrame], 0, nullptr);
-    renderNode(commandBuffer, m_pipeline->getLayout(), rootNode);
+    renderNode(commandBuffer, rootNode);
 
     vkCmdEndRenderPass(commandBuffer);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -266,44 +255,53 @@ void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
 
 // --- Private Methods ---
 
-void renderNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, const SceneNode& node) {
-    // If the node is not active, skip it and all its children
+void Renderer::renderNode(VkCommandBuffer commandBuffer, const SceneNode& node) {
     if (!node.isActive()) {
         return;
     }
 
-    // Check if the node has a mesh to render
     auto meshRenderer = node.getComponent<MeshRenderer>();
     if (meshRenderer) {
         auto mesh = meshRenderer->getMesh();
         if (mesh) {
-            // This is a drawable node, so issue draw commands
             MeshPushConstants pushConstants{};
             pushConstants.modelMatrix = node.getWorldMatrix();
+
+            // Determine which texture descriptor set to bind
+            VkDescriptorSet textureSet = m_fallbackTextureDescriptorSet;
 
             if (auto material = meshRenderer->getMaterial()) {
                 const auto& factors = material->getFactors();
                 pushConstants.baseColorFactor = factors.baseColorFactor;
                 pushConstants.emissiveFactor = glm::vec4(factors.emissiveFactor, 0.0f);
                 pushConstants.specularColorAndShininess = glm::vec4(factors.specularColor, factors.shininess);
+
+                if (material->getDescriptorSet() != VK_NULL_HANDLE) {
+                    textureSet = material->getDescriptorSet();
+                }
             }
 
             vkCmdPushConstants(
                 commandBuffer,
-                pipelineLayout,
+                m_pipeline->getLayout(),
                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                 0,
                 sizeof(MeshPushConstants),
                 &pushConstants);
+
+            // Bind per-material texture descriptor set at set 1
+            if (textureSet != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_pipeline->getLayout(), 1, 1, &textureSet, 0, nullptr);
+            }
 
             mesh->bind(commandBuffer);
             vkCmdDrawIndexed(commandBuffer, mesh->getIndexCount(), 1, 0, 0, 0);
         }
     }
 
-    // Recursively render all children
     for (const auto& child : node.getChildren()) {
-        renderNode(commandBuffer, pipelineLayout, *child);
+        renderNode(commandBuffer, *child);
     }
 }
 

@@ -25,6 +25,7 @@ layout(location = 3) in vec3 inNormal;
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec3 fragWorldPosition;
 layout(location = 2) out vec3 fragWorldNormal;
+layout(location = 3) out vec2 fragTexCoord;
 
 void main() {
     vec4 worldPosition = pushConstants.modelMatrix * vec4(inPosition, 1.0);
@@ -36,5 +37,6 @@ void main() {
     fragWorldPosition = worldPosition.xyz;
     fragWorldNormal = normalize(normalMatrix * inNormal);
     fragColor = inColor;
+    fragTexCoord = inTexCoord;
     gl_Position = ubo.proj * ubo.view * worldPosition;
 }

@@ -114,7 +114,7 @@ const char* toString(MeshNormalSource source) {
     return "unknown normals";
 }
 
-void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout) {
+void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout, VkDescriptorSetLayout textureSetLayout) {
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -135,10 +135,11 @@ void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, 
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(MeshPushConstants);
 
+    VkDescriptorSetLayout setLayouts[] = { *descriptorSetLayout, textureSetLayout };
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = descriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = 2;
+    pipelineLayoutInfo.pSetLayouts = setLayouts;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -209,6 +210,11 @@ void ModelViewerApp::onInit() {
 void ModelViewerApp::onShutdown() {
     vkDeviceWaitIdle(device_->getDevice());
 
+    defaultMaterial_.reset();
+    referenceMaterial_.reset();
+    materialDescriptorPool_.reset();
+    textureSetLayout_.reset();
+
     if (pipelineLayout_ != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device_->getDevice(), pipelineLayout_, nullptr);
     }
@@ -223,7 +229,11 @@ void ModelViewerApp::onShutdown() {
 void ModelViewerApp::initRenderingPipeline() {
     renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
-    createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_);
+    // Create texture descriptor set layout (set 1) and material descriptor pool
+    textureSetLayout_ = DescriptorManager::get().createTextureLayout(1, VK_SHADER_STAGE_FRAGMENT_BIT);
+    materialDescriptorPool_ = DescriptorManager::get().createPool(32);
+
+    createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_, textureSetLayout_->getHandle());
 
     const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
     const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
@@ -242,6 +252,19 @@ void ModelViewerApp::initRenderingPipeline() {
     createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
 
     renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, pipeline_);
+
+    // Create fallback texture descriptor set
+    {
+        auto setResult = materialDescriptorPool_->allocateDescriptorSet(textureSetLayout_);
+        if (!setResult) throw std::runtime_error("Failed to allocate fallback texture descriptor set");
+        fallbackTextureDescriptorSet_ = setResult.getValue();
+
+        DescriptorSet fallbackDescSet(device_->getDevice(), fallbackTextureDescriptorSet_, textureSetLayout_);
+        fallbackDescSet.writeImage(0, fallbackTexture_->getImage(), fallbackTexture_->getSampler());
+        fallbackDescSet.update();
+    }
+    renderer_->setFallbackTextureDescriptorSet(fallbackTextureDescriptorSet_);
+
     renderer_->setRecreateCallback([this](uint32_t width, uint32_t height) {
         recreateResources(width, height);
     });
@@ -282,6 +305,10 @@ void ModelViewerApp::initScene() {
     referenceMaterial_->setShininess(48.0f);
     referenceMaterial_->setMetallicFactor(0.0f);
     referenceMaterial_->setRoughnessFactor(0.9f);
+
+    // Create descriptor sets for materials
+    defaultMaterial_->createDescriptorSet(device_->getDevice(), materialDescriptorPool_, textureSetLayout_, fallbackTexture_);
+    referenceMaterial_->createDescriptorSet(device_->getDevice(), materialDescriptorPool_, textureSetLayout_, fallbackTexture_);
 
     loadModelMesh();
     referenceMesh_ = PrimitiveFactory::createUvSphere(memoryManager_, 1.0f, 24, 48);

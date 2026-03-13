@@ -28,6 +28,8 @@ namespace vkeng {
         // This is correct.
 
         swapChain_.reset();
+        fallbackTexture_.reset();
+        DescriptorManager::get().cleanup();
         memoryManager_.reset(); // Shared ptr, but we release our hold
         
         if (device_) {
@@ -82,6 +84,25 @@ namespace vkeng {
         if (!memManagerResult) throw std::runtime_error("Failed to create Memory Manager");
         memoryManager_ = memManagerResult.getValue();
         memoryManager_->initializeForTransfers(*device_);
+
+        // Initialize the descriptor manager singleton
+        DescriptorManager::get().initialize(device_->getDevice());
+
+        // Create 1x1 white fallback texture (used for unbound material texture slots)
+        {
+            uint32_t whitePixel = 0xFFFFFFFF; // RGBA white
+            auto imageResult = memoryManager_->createImage(
+                1, 1, VK_FORMAT_R8G8B8A8_SRGB,
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+            if (!imageResult) throw std::runtime_error("Failed to create fallback texture image");
+
+            auto uploadResult = memoryManager_->uploadToImage(
+                imageResult.getValue(), &whitePixel, sizeof(whitePixel), 1, 1);
+            if (!uploadResult) throw std::runtime_error("Failed to upload fallback texture data");
+
+            fallbackTexture_ = std::make_shared<Texture>(
+                "__fallback_white", device_->getDevice(), imageResult.getValue());
+        }
 
         // 5. SwapChain
         int width, height;

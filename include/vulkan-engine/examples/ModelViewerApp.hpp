@@ -5,6 +5,7 @@
 #include "vulkan-engine/rendering/OrbitCameraController.hpp"
 #include "vulkan-engine/rendering/Pipeline.hpp"
 #include "vulkan-engine/rendering/Renderer.hpp"
+#include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/resources/Material.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
@@ -57,6 +58,9 @@ private:
     VkDescriptorSetLayout descriptorSetLayout_{};
     VkDescriptorPool descriptorPool_{};
     std::vector<VkDescriptorSet> descriptorSets_{};
+    std::shared_ptr<DescriptorSetLayout> textureSetLayout_{};  ///< Layout for per-material texture descriptors (set 1)
+    std::shared_ptr<DescriptorPool> materialDescriptorPool_{}; ///< Persistent pool for material descriptor sets
+    VkDescriptorSet fallbackTextureDescriptorSet_{};           ///< Descriptor set using the white fallback texture
 
     std::shared_ptr<RenderPass> renderPass_{};
     std::shared_ptr<Pipeline> pipeline_{};

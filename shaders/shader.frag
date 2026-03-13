@@ -1,6 +1,6 @@
 #version 450
 
-layout(binding = 0) uniform GlobalUbo {
+layout(set = 0, binding = 0) uniform GlobalUbo {
     mat4 view;
     mat4 proj;
     vec4 cameraPosition;
@@ -17,9 +17,12 @@ layout(push_constant) uniform PushConstants {
     vec4 specularColorAndShininess;
 } pushConstants;
 
+layout(set = 1, binding = 0) uniform sampler2D texBaseColor;
+
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec3 fragWorldPosition;
 layout(location = 2) in vec3 fragWorldNormal;
+layout(location = 3) in vec2 fragTexCoord;
 
 layout(location = 0) out vec4 outColor;
 
@@ -29,7 +32,9 @@ vec3 applyGamma(vec3 linearColor) {
 
 void main() {
     vec3 normal = normalize(fragWorldNormal);
-    vec3 baseColor = fragColor * pushConstants.baseColorFactor.rgb;
+    vec4 texColor = texture(texBaseColor, fragTexCoord);
+    vec3 baseColor = fragColor * pushConstants.baseColorFactor.rgb * texColor.rgb;
+    float alpha = pushConstants.baseColorFactor.a * texColor.a;
 
     if (ubo.debugView.x > 1.5) {
         outColor = vec4(normal * 0.5 + 0.5, 1.0);
@@ -38,7 +43,7 @@ void main() {
 
     if (ubo.debugView.x > 0.5) {
         vec3 unlitColor = applyGamma(baseColor + pushConstants.emissiveFactor.rgb);
-        outColor = vec4(unlitColor, pushConstants.baseColorFactor.a);
+        outColor = vec4(unlitColor, alpha);
         return;
     }
 
@@ -60,5 +65,5 @@ void main() {
     vec3 finalColor = ambient + diffuse + specular + pushConstants.emissiveFactor.rgb;
 
     finalColor = applyGamma(finalColor);
-    outColor = vec4(finalColor, pushConstants.baseColorFactor.a);
+    outColor = vec4(finalColor, alpha);
 }

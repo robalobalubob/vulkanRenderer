@@ -23,6 +23,8 @@
 #include "vulkan-engine/core/InputManager.hpp"
 #include "vulkan-engine/core/MemoryManager.hpp"
 #include "vulkan-engine/core/Logger.hpp"
+#include "vulkan-engine/rendering/DescriptorSet.hpp"
+#include "vulkan-engine/resources/Texture.hpp"
 
 #include <GLFW/glfw3.h>
 #include <memory>
@@ -150,6 +152,7 @@ namespace vkeng {
         std::unique_ptr<VulkanDevice> device_;          ///< Logical and physical device wrapper
         std::shared_ptr<MemoryManager> memoryManager_;  ///< VMA-based memory allocator
         std::unique_ptr<VulkanSwapChain> swapChain_;    ///< Swapchain for presentation
+        std::shared_ptr<Texture> fallbackTexture_;      ///< 1x1 white fallback for unbound texture slots
 
     private:
         /**

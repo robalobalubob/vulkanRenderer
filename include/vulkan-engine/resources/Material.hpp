@@ -3,11 +3,14 @@
 #include "vulkan-engine/resources/ResourceManager.hpp"
 
 #include <glm/glm.hpp>
+#include <vulkan/vulkan.h>
 #include <memory>
 
 namespace vkeng {
 
 class Texture;
+class DescriptorPool;
+class DescriptorSetLayout;
 
 enum class AlphaMode {
     Opaque,
@@ -75,10 +78,17 @@ public:
 
     bool hasAnyTexture() const;
 
+    VkDescriptorSet getDescriptorSet() const { return m_descriptorSet; }
+    void createDescriptorSet(VkDevice device,
+                             std::shared_ptr<DescriptorPool> pool,
+                             std::shared_ptr<DescriptorSetLayout> layout,
+                             std::shared_ptr<Texture> fallbackTexture);
+
 private:
     MaterialFactors m_factors;
     AlphaMode m_alphaMode = AlphaMode::Opaque;
     MaterialTextures m_textures;
+    VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
 };
 
 } // namespace vkeng

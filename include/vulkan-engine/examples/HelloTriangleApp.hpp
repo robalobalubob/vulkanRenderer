@@ -4,9 +4,11 @@
 #include "vulkan-engine/rendering/CameraController.hpp"
 #include "vulkan-engine/rendering/Pipeline.hpp"
 #include "vulkan-engine/rendering/Renderer.hpp"
+#include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
 #include "vulkan-engine/core/Buffer.hpp"
+#include "vulkan-engine/resources/Material.hpp"
 
 #include <memory>
 #include <vector>
@@ -43,6 +45,10 @@ namespace vkeng {
         VkDescriptorSetLayout descriptorSetLayout_{};              ///< Layout for shader resources
         VkDescriptorPool descriptorPool_{};                        ///< Pool for descriptor allocation
         std::vector<VkDescriptorSet> descriptorSets_{};            ///< Per-frame descriptor sets
+        std::shared_ptr<DescriptorSetLayout> textureSetLayout_{};  ///< Layout for per-material texture descriptors (set 1)
+        std::shared_ptr<DescriptorPool> materialDescriptorPool_{}; ///< Persistent pool for material descriptor sets
+        VkDescriptorSet fallbackTextureDescriptorSet_{};           ///< Descriptor set using the white fallback texture
+        std::shared_ptr<Material> defaultMaterial_{};              ///< Default material for objects without one
 
         // ============================================================================
         // Vulkan Rendering Pipeline
