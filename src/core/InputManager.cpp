@@ -10,6 +10,9 @@
 #include "vulkan-engine/core/InputManager.hpp"
 #include "vulkan-engine/core/Logger.hpp"
 #include <cstring>
+#include <cstdlib>
+#include <fstream>
+#include <string>
 
 namespace vkeng {
 
@@ -55,6 +58,30 @@ void InputManager::init(GLFWwindow* window) {
     glfwSetCursorPosCallback(window, CursorPosCallback);
     glfwSetMouseButtonCallback(window, MouseButtonCallback);
     glfwSetScrollCallback(window, ScrollCallback);
+
+    // Decide whether to enable raw mouse motion based on policy
+    bool wantRaw = false;
+    if (m_rawMouseMode == RawMouseMode::Enabled) {
+        wantRaw = true;
+    } else if (m_rawMouseMode == RawMouseMode::Auto) {
+        wantRaw = !isWSLOrXWayland();
+    }
+    // RawMouseMode::Disabled → wantRaw stays false
+
+    if (wantRaw && glfwRawMouseMotionSupported()) {
+        glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        m_rawMouseActive = true;
+        LOG_INFO(INPUT, "Raw mouse motion enabled");
+    } else {
+        m_rawMouseActive = false;
+        if (m_rawMouseMode == RawMouseMode::Enabled && !glfwRawMouseMotionSupported()) {
+            LOG_WARN(INPUT, "Raw mouse motion requested but not supported by platform");
+        } else if (m_rawMouseMode == RawMouseMode::Auto && isWSLOrXWayland()) {
+            LOG_INFO(INPUT, "Raw mouse motion disabled (WSL/XWayland detected)");
+        } else {
+            LOG_INFO(INPUT, "Raw mouse motion disabled");
+        }
+    }
 
     // Configure initial cursor mode for FPS-style camera control
     // Start with normal cursor to allow interaction; click to capture
@@ -184,8 +211,10 @@ void InputManager::KeyCallback(GLFWwindow* window, int key, int scancode, int ac
         if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
             int currentMode = glfwGetInputMode(window, GLFW_CURSOR);
             if (currentMode == GLFW_CURSOR_DISABLED) {
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 manager->m_firstMouse = true;
+                manager->m_mouseDeltaX = 0.0;
+                manager->m_mouseDeltaY = 0.0;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 LOG_INFO(INPUT, "Cursor released");
             } else {
                 glfwSetWindowShouldClose(window, true);
@@ -195,10 +224,15 @@ void InputManager::KeyCallback(GLFWwindow* window, int key, int scancode, int ac
         if (key == GLFW_KEY_F1 && action == GLFW_PRESS) {
             int currentMode = glfwGetInputMode(window, GLFW_CURSOR);
             if (currentMode == GLFW_CURSOR_DISABLED) {
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 manager->m_firstMouse = true;
+                manager->m_mouseDeltaX = 0.0;
+                manager->m_mouseDeltaY = 0.0;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 LOG_INFO(INPUT, "Cursor released via F1");
             } else {
+                manager->m_firstMouse = true;
+                manager->m_mouseDeltaX = 0.0;
+                manager->m_mouseDeltaY = 0.0;
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 LOG_INFO(INPUT, "Cursor captured via F1");
             }
@@ -216,12 +250,15 @@ void InputManager::MouseButtonCallback(GLFWwindow* window, int button, int actio
     if (manager) {
         manager->handleMouseButton(button, action, mods);
 
-        // Click to capture
+        // Click to capture — set firstMouse BEFORE mode change because
+        // glfwSetInputMode can fire CursorPosCallback synchronously
         if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
             int currentMode = glfwGetInputMode(window, GLFW_CURSOR);
             if (currentMode == GLFW_CURSOR_NORMAL) {
+                manager->m_firstMouse = true;
+                manager->m_mouseDeltaX = 0.0;
+                manager->m_mouseDeltaY = 0.0;
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                manager->m_firstMouse = true; // Reset mouse delta tracking
                 LOG_INFO(INPUT, "Cursor captured via Click");
             }
         }
@@ -231,6 +268,35 @@ void InputManager::MouseButtonCallback(GLFWwindow* window, int button, int actio
 void InputManager::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     InputManager* manager = static_cast<InputManager*>(glfwGetWindowUserPointer(window));
     if (manager) manager->handleScroll(xoffset, yoffset);
+}
+
+// ============================================================================
+// Platform Detection
+// ============================================================================
+
+bool InputManager::isWSLOrXWayland() {
+#ifdef __linux__
+    // Check /proc/version for WSL signature
+    {
+        std::ifstream procVersion("/proc/version");
+        if (procVersion.is_open()) {
+            std::string line;
+            std::getline(procVersion, line);
+            if (line.find("microsoft") != std::string::npos ||
+                line.find("Microsoft") != std::string::npos ||
+                line.find("WSL") != std::string::npos) {
+                return true;
+            }
+        }
+    }
+
+    // Check for XWayland: if WAYLAND_DISPLAY is set, X11 apps run through XWayland
+    const char* waylandDisplay = std::getenv("WAYLAND_DISPLAY");
+    if (waylandDisplay && waylandDisplay[0] != '\0') {
+        return true;
+    }
+#endif
+    return false;
 }
 
 } // namespace vkeng

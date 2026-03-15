@@ -19,6 +19,13 @@
 
 namespace vkeng {
 
+/** @brief Policy for GLFW raw mouse motion input */
+enum class RawMouseMode {
+    Auto,     ///< Detect platform — disable on WSL/XWayland, enable elsewhere
+    Enabled,  ///< Always enable (may cause drift on some platforms)
+    Disabled  ///< Always disable (uses OS-accelerated cursor deltas)
+};
+
 /**
  * @class InputManager
  * @brief Manages keyboard and mouse input with frame-based state tracking
@@ -74,6 +81,18 @@ public:
      * @note Automatically sets cursor to disabled mode for FPS-style camera
      * @warning Window must be valid and initialized before calling
      */
+    /**
+     * @brief Set the raw mouse motion policy (call before init)
+     * @param mode RawMouseMode::Auto detects the platform automatically
+     */
+    void setRawMouseMode(RawMouseMode mode) { m_rawMouseMode = mode; }
+
+    /** @brief Get the current raw mouse motion policy */
+    RawMouseMode getRawMouseMode() const { return m_rawMouseMode; }
+
+    /** @brief Whether raw mouse motion is actually active (valid after init) */
+    bool isRawMouseMotionActive() const { return m_rawMouseActive; }
+
     void init(GLFWwindow* window);
     
     /**
@@ -245,6 +264,12 @@ private:
     double m_mouseX;             ///< Current absolute mouse X position
     double m_mouseY;             ///< Current absolute mouse Y position
     bool m_firstMouse;           ///< Flag to handle first mouse movement
+
+    RawMouseMode m_rawMouseMode{RawMouseMode::Auto}; ///< User-selected policy
+    bool m_rawMouseActive{false};                     ///< Whether raw input is actually on
+
+    /** @brief Detect if running under WSL or XWayland */
+    static bool isWSLOrXWayland();
 };
 
 } // namespace vkeng

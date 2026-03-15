@@ -5,7 +5,7 @@
 
 int main() {
     // Initialize logging system
-    vkeng::Logger::getInstance().setLogLevel(vkeng::LogLevel::INFO);
+    vkeng::Logger::getInstance().setLogLevel(vkeng::LogLevel::DEBUG);
     
     LOG_INFO(GENERAL, "=== Vulkan Engine Phase 1 Test ===");
     LOG_INFO(GENERAL, "Starting HelloTriangleApp...");

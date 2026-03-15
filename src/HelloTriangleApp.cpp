@@ -309,8 +309,7 @@ void HelloTriangleApp::initScene() {
 
     // --- Camera ---
     camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float)swapChain_->extent().height, 0.1f, 100.0f);
-    camera_->getTransform().setPosition(0.0f, 2.0f, 8.0f);
-    camera_->getTransform().setRotation(glm::vec3(glm::radians(-10.0f), 0.0f, 0.0f));
+    camera_->setPosition(glm::vec3(0.0f, 2.0f, 8.0f));
 
     // Create the controller and give it our camera to control
     cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_, *inputManager_);

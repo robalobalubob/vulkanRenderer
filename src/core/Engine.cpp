@@ -1,5 +1,6 @@
 #include "vulkan-engine/core/Engine.hpp"
 #include "vulkan-engine/core/GlfwWindow.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace vkeng {
@@ -113,13 +114,17 @@ namespace vkeng {
     void Engine::run() {
         onInit(); // Allow derived class to initialize its specific resources
 
-        float lastTime = 0.0f;
+        float lastTime = static_cast<float>(glfwGetTime());
         while (!window_->shouldClose()) {
             window_->pollEvents();
 
             float currentTime = static_cast<float>(glfwGetTime());
             float deltaTime = currentTime - lastTime;
             lastTime = currentTime;
+
+            // Clamp deltaTime to prevent camera/physics explosions from frame spikes
+            // (window resize, tab switch, debugger attach, etc.)
+            deltaTime = std::min(deltaTime, 0.1f);
 
             onUpdate(deltaTime);
             onRender();
