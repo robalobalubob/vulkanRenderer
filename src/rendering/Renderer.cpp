@@ -10,6 +10,7 @@
 #include "vulkan-engine/rendering/Renderer.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
+#include "vulkan-engine/components/Light.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
 #include "vulkan-engine/resources/Mesh.hpp"
 #include "vulkan-engine/resources/Material.hpp"
@@ -18,7 +19,9 @@
 #include "vulkan-engine/rendering/CommandPool.hpp"
 #include "vulkan-engine/core/Logger.hpp"
 #include <glm/geometric.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <stdexcept>
+#include <algorithm>
 
 namespace vkeng {
 
@@ -186,9 +189,18 @@ void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
 void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& rootNode, Camera& camera,
                                  const std::vector<VkDescriptorSet>& descriptorSets,
                                  const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
+    // Collect lights from the scene graph (before UBO upload)
+    m_collectedLights.clear();
+    collectLights(rootNode, m_collectedLights);
+
     // Use m_currentFrame (not imageIndex) for per-frame resources.
     // imageIndex is only used for selecting the framebuffer.
     updateGlobalUbo(m_currentFrame, camera, uniformBuffers);
+
+    // Extract frustum planes once per frame for culling during scene traversal
+    m_frustum = camera.getFrustum();
+    m_drawnCount = 0;
+    m_culledCount = 0;
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -246,10 +258,15 @@ void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
     ubo.view = camera.getViewMatrix();
     ubo.proj = camera.getProjectionMatrix();
     ubo.cameraPosition = glm::vec4(camera.getPosition(), 1.0f);
-    ubo.lightDirection = glm::vec4(glm::normalize(glm::vec3(-0.6f, -1.0f, -0.4f)), 0.0f);
-    ubo.lightColor = glm::vec4(1.0f, 0.98f, 0.95f, 1.35f);
     ubo.ambientColor = glm::vec4(0.14f, 0.14f, 0.16f, 1.0f);
     ubo.debugView = glm::vec4(static_cast<float>(m_debugShadingMode), 0.0f, 0.0f, 0.0f);
+
+    // Collect lights from the scene graph into the UBO
+    ubo.lightCount = static_cast<uint32_t>(m_collectedLights.size());
+    for (uint32_t i = 0; i < ubo.lightCount; i++) {
+        ubo.lights[i] = m_collectedLights[i];
+    }
+
     uniformBuffers[currentImage]->copyData(&ubo, sizeof(ubo));
 }
 
@@ -264,6 +281,35 @@ void Renderer::renderNode(VkCommandBuffer commandBuffer, const SceneNode& node) 
     if (meshRenderer) {
         auto mesh = meshRenderer->getMesh();
         if (mesh) {
+            // Frustum culling: test bounding sphere against camera frustum
+            if (m_cullingEnabled) {
+                const glm::mat4& worldMatrix = node.getWorldMatrix();
+
+                // Transform bounding sphere center to world space
+                glm::vec3 worldCenter = glm::vec3(
+                    worldMatrix * glm::vec4(mesh->getBoundsCenter(), 1.0f));
+
+                // Scale radius by the max axis scale (conservative for non-uniform scale).
+                // Column lengths of the 3x3 portion give per-axis scale factors.
+                float maxScale = std::max({
+                    glm::length(glm::vec3(worldMatrix[0])),
+                    glm::length(glm::vec3(worldMatrix[1])),
+                    glm::length(glm::vec3(worldMatrix[2]))
+                });
+                float worldRadius = mesh->getBoundingRadius() * maxScale;
+
+                if (!m_frustum.intersectsSphere(worldCenter, worldRadius)) {
+                    m_culledCount++;
+                    // Still recurse into children — parent mesh being off-screen
+                    // doesn't imply children are (no aggregate bounding volumes).
+                    for (const auto& child : node.getChildren()) {
+                        renderNode(commandBuffer, *child);
+                    }
+                    return;
+                }
+            }
+            m_drawnCount++;
+
             MeshPushConstants pushConstants{};
             pushConstants.modelMatrix = node.getWorldMatrix();
 
@@ -305,6 +351,39 @@ void Renderer::renderNode(VkCommandBuffer commandBuffer, const SceneNode& node) 
     }
 }
 
+
+void Renderer::collectLights(const SceneNode& root, std::vector<GpuLight>& outLights) {
+    if (!root.isActive()) return;
+    if (outLights.size() >= MAX_LIGHTS) return;
+
+    auto light = root.getComponent<Light>();
+    if (light && light->isEnabled()) {
+        GpuLight gpu{};
+
+        glm::vec3 worldPos = root.getWorldPosition();
+        glm::quat worldRot = root.getWorldRotation();
+        // Forward vector is local -Z rotated by world rotation
+        glm::vec3 forward = glm::normalize(worldRot * glm::vec3(0.0f, 0.0f, -1.0f));
+
+        gpu.positionAndType = glm::vec4(worldPos, static_cast<float>(light->getType()));
+        gpu.directionAndRange = glm::vec4(forward, light->getRange());
+        gpu.colorAndIntensity = glm::vec4(light->getColor(), light->getIntensity());
+
+        if (light->getType() == LightType::Spot) {
+            gpu.spotParams = glm::vec4(
+                std::cos(light->getInnerConeAngle()),
+                std::cos(light->getOuterConeAngle()),
+                0.0f, 0.0f);
+        }
+
+        outLights.push_back(gpu);
+    }
+
+    for (const auto& child : root.getChildren()) {
+        if (outLights.size() >= MAX_LIGHTS) break;
+        collectLights(*child, outLights);
+    }
+}
 
 void Renderer::createFramebuffers() {
     VkExtent2D extent = m_swapChain.extent();

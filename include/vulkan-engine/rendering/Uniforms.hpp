@@ -1,16 +1,9 @@
 /**
  * @file Uniforms.hpp
  * @brief Shader uniform and push constant data structures
- * 
- * This file contains the data structures used for passing uniform data and
- * push constants to shaders. These structures define the layout of data
- * that the GPU shaders expect for rendering operations.
- * 
- * Key Shader Data Concepts:
- * - Uniform Buffers: Large data sets uploaded to GPU memory buffers
- * - Push Constants: Small data sets pushed directly to command buffer
- * - Memory Alignment: Proper alignment for GPU buffer standards
- * - Matrix Storage: Column-major matrices for shader compatibility
+ *
+ * Defines the CPU-side structures that mirror the GLSL uniform blocks.
+ * These must stay in exact sync with shader.vert / shader.frag.
  */
 
 #pragma once
@@ -19,43 +12,57 @@
 
 namespace vkeng {
 
+    /// Maximum number of lights the shader can process per frame.
+    static constexpr uint32_t MAX_LIGHTS = 8;
+
     enum class DebugShadingMode : uint32_t {
         Lit = 0,
         Unlit = 1,
         Normals = 2,
     };
-    
+
+    /**
+     * @struct GpuLight
+     * @brief GPU-side representation of a single light source
+     *
+     * Packed into vec4s for std140 alignment. The shader unpacks these
+     * fields to compute per-light Blinn-Phong contributions.
+     */
+    struct GpuLight {
+        alignas(16) glm::vec4 positionAndType;    ///< xyz = world position, w = LightType (0=dir,1=pt,2=spot)
+        alignas(16) glm::vec4 directionAndRange;  ///< xyz = world direction, w = attenuation range
+        alignas(16) glm::vec4 colorAndIntensity;  ///< rgb = color, a = intensity
+        alignas(16) glm::vec4 spotParams;         ///< x = cos(innerCone), y = cos(outerCone), zw = reserved
+    };
+
     /**
      * @struct GlobalUbo
      * @brief Global uniform buffer object containing scene-wide camera and light data
-     * 
-     * This structure contains per-frame global data that is shared across
-     * all rendering operations. It includes camera matrices, camera position,
-     * and the default directional light used by the current lit shading path.
-     * 
-     * @note alignas(16) ensures proper GPU buffer alignment requirements
-     * @note Matrices are in column-major order for shader compatibility
+     *
+     * Uploaded once per frame. Contains camera matrices, ambient color,
+     * debug flags, and an array of active lights.
+     *
+     * @note alignas(16) ensures proper GPU buffer alignment (std140)
      */
     struct GlobalUbo {
         alignas(16) glm::mat4 view;             ///< View matrix (world to camera space)
         alignas(16) glm::mat4 proj;             ///< Projection matrix (camera to clip space)
-        alignas(16) glm::vec4 cameraPosition;   ///< Camera world position (xyz) and padding (w)
-        alignas(16) glm::vec4 lightDirection;   ///< Direction the light travels in world space
-        alignas(16) glm::vec4 lightColor;       ///< Light color (rgb) and intensity (a)
-        alignas(16) glm::vec4 ambientColor;     ///< Ambient light color contribution (rgb)
-        alignas(16) glm::vec4 debugView;        ///< x = DebugShadingMode, remaining values reserved for future debug flags
+        alignas(16) glm::vec4 cameraPosition;   ///< Camera world position (xyz), w = padding
+        alignas(16) glm::vec4 ambientColor;     ///< Ambient light color (rgb), a = padding
+        alignas(16) glm::vec4 debugView;        ///< x = DebugShadingMode, yzw reserved
+        alignas(4)  uint32_t  lightCount = 0;   ///< Number of active lights (0..MAX_LIGHTS)
+        alignas(4)  uint32_t  _pad0 = 0;        ///< Explicit padding for std140
+        alignas(4)  uint32_t  _pad1 = 0;
+        alignas(4)  uint32_t  _pad2 = 0;
+        GpuLight lights[MAX_LIGHTS];             ///< Active light array
     };
 
     /**
      * @struct MeshPushConstants
-     * @brief Push constants for per-mesh transformation data
-     * 
-     * This structure contains per-mesh data that changes frequently during
-     * rendering. Push constants are small amounts of data pushed directly
-     * into the command buffer for efficient per-object updates.
-     * 
-     * @note Push constants are limited in size but very fast to update
-     * @note Default initialized to identity matrix for objects at origin
+     * @brief Push constants for per-mesh transformation and material data
+     *
+     * @note Push constants are limited to 128 bytes (guaranteed minimum).
+     *       Current size: 112 bytes.
      */
     struct MeshPushConstants {
         alignas(16) glm::mat4 modelMatrix{1.f};                    ///< Model matrix (object to world space)

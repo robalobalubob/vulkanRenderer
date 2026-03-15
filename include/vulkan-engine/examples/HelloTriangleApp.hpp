@@ -11,6 +11,7 @@
 #include "vulkan-engine/resources/Material.hpp"
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace vkeng {
@@ -54,9 +55,10 @@ namespace vkeng {
         // Vulkan Rendering Pipeline
         // ============================================================================
         
-        std::shared_ptr<RenderPass> renderPass_{};                  ///< Render pass definition
-        std::shared_ptr<Pipeline> pipeline_{};                      ///< Graphics pipeline
-        VkPipelineLayout pipelineLayout_{};                         ///< Pipeline layout for resources
+        std::shared_ptr<RenderPass>   renderPass_{};                  ///< Render pass definition
+        std::optional<PipelineCache>  pipelineCache_{};             ///< Must be declared before pipeline_ (destroyed after)
+        std::shared_ptr<Pipeline>     pipeline_{};                  ///< Graphics pipeline
+        VkPipelineLayout              pipelineLayout_{};            ///< Pipeline layout for resources
 
         // ============================================================================
         // Rendering and Camera System

@@ -1,5 +1,6 @@
 #include "vulkan-engine/examples/ModelViewerApp.hpp"
 
+#include "vulkan-engine/components/Light.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/core/InputManager.hpp"
 #include "vulkan-engine/core/Logger.hpp"
@@ -237,7 +238,9 @@ void ModelViewerApp::initRenderingPipeline() {
 
     const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
     const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
-    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), vertPath, fragPath);
+    pipelineCache_.emplace(device_->getDevice(), "pipeline.cache");
+    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), vertPath, fragPath,
+        pipelineCache_->get());
 
     uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
     for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
@@ -320,6 +323,16 @@ void ModelViewerApp::initScene() {
     referenceNode_->addComponent<MeshRenderer>(referenceMesh_, referenceMaterial_);
     rootNode_->addChild(modelNode_);
     rootNode_->addChild(referenceNode_);
+
+    // --- Lights ---
+    // Directional sun (matches the old hardcoded values)
+    auto sunNode = std::make_shared<SceneNode>("Sun");
+    sunNode->getTransform().setRotation(glm::vec3(glm::radians(-60.0f), glm::radians(-30.0f), 0.0f));
+    auto sunLight = sunNode->addComponent<Light>();
+    sunLight->setType(LightType::Directional);
+    sunLight->setColor({1.0f, 0.98f, 0.95f});
+    sunLight->setIntensity(1.35f);
+    rootNode_->addChild(sunNode);
 
     layoutComparisonScene();
     setDebugShadingMode(debugShadingMode_);
@@ -424,7 +437,7 @@ void ModelViewerApp::toggleGeneratedNormalMode() {
 }
 
 void ModelViewerApp::logViewerControls() const {
-    LOG_INFO(GENERAL, "Model viewer controls: 1=lit, 2=unlit, 3=normal debug, N=toggle generated smooth/flat normals, R/F=reset camera, H=repeat controls");
+    LOG_INFO(GENERAL, "Model viewer controls: 1=lit, 2=unlit, 3=normal debug, N=toggle generated smooth/flat normals, C=toggle frustum culling, R/F=reset camera, H=repeat controls");
     LOG_INFO(GENERAL, "Reference sphere remains on the right side of the scene to compare smooth interpolation against the loaded mesh");
 }
 
@@ -435,7 +448,9 @@ void ModelViewerApp::recreateResources(uint32_t width, uint32_t height) {
 
     const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
     const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
-    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, VkExtent2D{width, height}, vertPath, fragPath);
+    // pipelineCache_ is intentionally NOT recreated here — same cache survives resize
+    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, VkExtent2D{width, height}, vertPath, fragPath,
+        pipelineCache_->get());
 
     if (descriptorPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(device_->getDevice(), descriptorPool_, nullptr);
@@ -474,6 +489,11 @@ void ModelViewerApp::onUpdate(float deltaTime) {
     if (inputManager_->isKeyTriggered(GLFW_KEY_H)) {
         logViewerControls();
     }
+    if (inputManager_->isKeyTriggered(GLFW_KEY_C)) {
+        bool enabled = !renderer_->isCullingEnabled();
+        renderer_->setCullingEnabled(enabled);
+        LOG_INFO(RENDERING, "Frustum culling {}", enabled ? "enabled" : "disabled");
+    }
 
     if (orbitController_) {
         orbitController_->update(deltaTime);
@@ -491,6 +511,10 @@ void ModelViewerApp::onUpdate(float deltaTime) {
 
     if (frameCount_ % DEBUG_FRAME_INTERVAL == 0) {
         LOG_TRACE(GENERAL, "Model viewer frame #{}, deltaTime={}", frameCount_, deltaTime);
+        if (renderer_->isCullingEnabled()) {
+            LOG_DEBUG(RENDERING, "Culling stats: {} drawn, {} culled",
+                      renderer_->getDrawnCount(), renderer_->getCulledCount());
+        }
     }
 }
 

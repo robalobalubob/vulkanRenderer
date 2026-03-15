@@ -1,13 +1,25 @@
 #version 450
 
+const uint MAX_LIGHTS = 8;
+
+struct Light {
+    vec4 positionAndType;
+    vec4 directionAndRange;
+    vec4 colorAndIntensity;
+    vec4 spotParams;
+};
+
 layout(set = 0, binding = 0) uniform GlobalUbo {
     mat4 view;
     mat4 proj;
     vec4 cameraPosition;
-    vec4 lightDirection;
-    vec4 lightColor;
     vec4 ambientColor;
     vec4 debugView;
+    uint lightCount;
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
+    Light lights[MAX_LIGHTS];
 } ubo;
 
 layout(push_constant) uniform PushConstants {
@@ -36,6 +48,7 @@ void main() {
     vec3 baseColor = fragColor * pushConstants.baseColorFactor.rgb * texColor.rgb;
     float alpha = pushConstants.baseColorFactor.a * texColor.a;
 
+    // --- Debug views (bypass lighting) ---
     if (ubo.debugView.x > 1.5) {
         outColor = vec4(normal * 0.5 + 0.5, 1.0);
         return;
@@ -47,23 +60,65 @@ void main() {
         return;
     }
 
-    vec3 lightDir = normalize(-ubo.lightDirection.xyz);
+    // --- Lit shading: accumulate per-light Blinn-Phong ---
     vec3 viewDir = normalize(ubo.cameraPosition.xyz - fragWorldPosition);
-    vec3 reflectDir = reflect(-lightDir, normal);
+    vec3 specColor = pushConstants.specularColorAndShininess.rgb;
+    float shininess = max(pushConstants.specularColorAndShininess.a, 1.0);
 
-    vec3 ambient = ubo.ambientColor.rgb * baseColor;
+    // Start with ambient
+    vec3 lighting = ubo.ambientColor.rgb * baseColor;
 
-    float diffuseFactor = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = baseColor * diffuseFactor * ubo.lightColor.rgb * ubo.lightColor.a;
+    for (uint i = 0u; i < ubo.lightCount && i < MAX_LIGHTS; i++) {
+        Light light = ubo.lights[i];
+        float lightType = light.positionAndType.w;
 
-    float specularFactor = 0.0;
-    if (diffuseFactor > 0.0) {
-        specularFactor = pow(max(dot(viewDir, reflectDir), 0.0), max(pushConstants.specularColorAndShininess.a, 1.0));
+        vec3 L;
+        float attenuation = 1.0;
+
+        if (lightType < 0.5) {
+            // --- Directional light ---
+            L = normalize(-light.directionAndRange.xyz);
+        } else {
+            // --- Point or Spot light ---
+            vec3 toLight = light.positionAndType.xyz - fragWorldPosition;
+            float dist = length(toLight);
+            L = toLight / max(dist, 0.0001);
+
+            // Smooth distance attenuation (squared falloff, zero at range)
+            float range = light.directionAndRange.w;
+            float ratio = clamp(dist / range, 0.0, 1.0);
+            attenuation = (1.0 - ratio) * (1.0 - ratio);
+
+            if (lightType > 1.5) {
+                // --- Spot light angular falloff ---
+                float cosTheta = dot(L, normalize(-light.directionAndRange.xyz));
+                float cosInner = light.spotParams.x;
+                float cosOuter = light.spotParams.y;
+                attenuation *= smoothstep(cosOuter, cosInner, cosTheta);
+            }
+        }
+
+        // Diffuse (Lambertian)
+        float NdotL = max(dot(normal, L), 0.0);
+        vec3 diffuse = baseColor * NdotL;
+
+        // Specular (Blinn-Phong)
+        float spec = 0.0;
+        if (NdotL > 0.0) {
+            vec3 H = normalize(L + viewDir);
+            spec = pow(max(dot(normal, H), 0.0), shininess);
+        }
+        vec3 specular = specColor * spec;
+
+        vec3 lightContrib = (diffuse + specular)
+                          * light.colorAndIntensity.rgb
+                          * light.colorAndIntensity.a
+                          * attenuation;
+        lighting += lightContrib;
     }
 
-    vec3 specular = pushConstants.specularColorAndShininess.rgb * specularFactor * ubo.lightColor.rgb * ubo.lightColor.a;
-    vec3 finalColor = ambient + diffuse + specular + pushConstants.emissiveFactor.rgb;
+    // Add emissive (unaffected by lighting)
+    lighting += pushConstants.emissiveFactor.rgb;
 
-    finalColor = applyGamma(finalColor);
-    outColor = vec4(finalColor, alpha);
+    outColor = vec4(applyGamma(lighting), alpha);
 }

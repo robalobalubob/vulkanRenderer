@@ -22,6 +22,56 @@
 namespace vkeng {
 
     /**
+     * @class PipelineCache
+     * @brief RAII wrapper for VkPipelineCache with on-disk persistence.
+     *
+     * On construction, attempts to load a previously saved cache blob from
+     * @p cacheFilePath. The driver validates the blob header (vendor/device/
+     * driver IDs) and silently ignores stale or wrong-GPU data, so it is always
+     * safe to pass any on-disk blob.
+     *
+     * On destruction, the current cache data is serialised back to the same file
+     * so the next launch starts with a warm cache.
+     *
+     * @note Declare pipelineCache_ BEFORE pipeline_ in the owning class so that
+     *       the pipeline is destroyed first (C++ reverses declaration order).
+     */
+    class PipelineCache {
+    public:
+        /**
+         * @brief Creates the pipeline cache, optionally pre-populating from disk.
+         * @param device        The logical device that owns this cache.
+         * @param cacheFilePath Path to the binary cache file. Need not exist;
+         *                      a missing file is treated as a cold start.
+         */
+        explicit PipelineCache(VkDevice device,
+                               const std::filesystem::path& cacheFilePath = "pipeline.cache");
+
+        /** @brief Saves the cache data to disk, then destroys the VkPipelineCache. */
+        ~PipelineCache() noexcept;
+
+        PipelineCache(const PipelineCache&) = delete;
+        PipelineCache& operator=(const PipelineCache&) = delete;
+
+        PipelineCache(PipelineCache&& other) noexcept
+            : m_device(other.m_device), m_cache(other.m_cache),
+              m_cacheFilePath(std::move(other.m_cacheFilePath)) {
+            other.m_device = VK_NULL_HANDLE;
+            other.m_cache  = VK_NULL_HANDLE;
+        }
+
+        /** @brief Returns the raw handle for passing to Pipeline constructors. */
+        VkPipelineCache get() const { return m_cache; }
+
+    private:
+        void saveToDisk() noexcept;
+
+        VkDevice              m_device{VK_NULL_HANDLE};
+        VkPipelineCache       m_cache{VK_NULL_HANDLE};
+        std::filesystem::path m_cacheFilePath;
+    };
+
+    /**
      * @class Pipeline
      * @brief Manages Vulkan graphics pipeline creation and shader loading
      * 
@@ -61,7 +111,8 @@ namespace vkeng {
             VkPipelineLayout pipelineLayout,
             VkExtent2D extent,
             const std::filesystem::path& vertPath,
-            const std::filesystem::path& fragPath);
+            const std::filesystem::path& fragPath,
+            VkPipelineCache cache = VK_NULL_HANDLE);
 
         /**
          * @brief Constructs graphics pipeline from existing shader modules
@@ -71,7 +122,8 @@ namespace vkeng {
             VkPipelineLayout pipelineLayout,
             VkExtent2D extent,
             VkShaderModule vertModule,
-            VkShaderModule fragModule);
+            VkShaderModule fragModule,
+            VkPipelineCache cache = VK_NULL_HANDLE);
             
         /**
          * @brief Destroys pipeline and associated resources
@@ -159,7 +211,8 @@ namespace vkeng {
          * - Depth testing (enabled, LESS compare op)
          * - Color blending (disabled)
          */
-        void createGraphicsPipeline(VkShaderModule vertModule, VkShaderModule fragModule);
+        void createGraphicsPipeline(VkShaderModule vertModule, VkShaderModule fragModule,
+                                     VkPipelineCache cache = VK_NULL_HANDLE);
 
         // ============================================================================
         // Pipeline State

@@ -7,6 +7,7 @@
 #include "vulkan-engine/resources/ResourceManager.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
+#include "vulkan-engine/components/Light.hpp"
 #include "vulkan-engine/core/InputManager.hpp"
 #include "vulkan-engine/core/Logger.hpp"
 #include "vulkan-engine/rendering/FirstPersonCameraController.hpp"
@@ -149,8 +150,9 @@ void HelloTriangleApp::initRenderingPipeline() {
     // 3. Create Pipeline
     const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
     const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
-
-    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), vertPath, fragPath); 
+    pipelineCache_.emplace(device_->getDevice(), "pipeline.cache");
+    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), vertPath, fragPath,
+        pipelineCache_->get());
 
     // 4. Create Mesh and UBOs (This is part of the "Scene" really, but tied to the pipeline setup)
     const std::vector<Vertex> vertices = {
@@ -199,10 +201,11 @@ void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
     // 1. Recreate RenderPass
     renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
-    // 2. Recreate Pipeline
+    // 2. Recreate Pipeline (pipelineCache_ is intentionally NOT recreated — same cache survives resize)
     const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
     const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
-    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, VkExtent2D{width, height}, vertPath, fragPath);
+    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, VkExtent2D{width, height}, vertPath, fragPath,
+        pipelineCache_->get());
 
     // 3. Recreate Uniform Buffers and Descriptors (in case image count changed)
     // Cleanup old resources
@@ -264,8 +267,50 @@ void HelloTriangleApp::initScene() {
     cubeNode->addComponent<MeshRenderer>(cubeMesh, defaultMaterial_);
     rootNode_->addChild(cubeNode);
 
-    camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float)swapChain_->extent().height, 0.1f, 10.0f);
-    camera_->getTransform().setPosition(0.0f, 0.0f, 5.0f);
+    // --- Ground plane for lighting showcase ---
+    auto planeMesh = PrimitiveFactory::createPlane(memoryManager_, 10.0f, 10.0f, 10, 10);
+    auto planeNode = std::make_shared<SceneNode>("Ground");
+    planeNode->getTransform().setPosition(0.0f, -1.0f, 0.0f);
+    planeNode->addComponent<MeshRenderer>(planeMesh, defaultMaterial_);
+    rootNode_->addChild(planeNode);
+
+    // --- Lights ---
+
+    // Sun (directional): warm white, angled down
+    auto sunNode = std::make_shared<SceneNode>("Sun");
+    sunNode->getTransform().setRotation(glm::vec3(glm::radians(-60.0f), glm::radians(-30.0f), 0.0f));
+    auto sunLight = sunNode->addComponent<Light>();
+    sunLight->setType(LightType::Directional);
+    sunLight->setColor({1.0f, 0.98f, 0.95f});
+    sunLight->setIntensity(1.35f);
+    rootNode_->addChild(sunNode);
+
+    // Red point light: hovering above right
+    auto redLightNode = std::make_shared<SceneNode>("RedPointLight");
+    redLightNode->getTransform().setPosition(2.0f, 1.5f, 1.0f);
+    auto redLight = redLightNode->addComponent<Light>();
+    redLight->setType(LightType::Point);
+    redLight->setColor({1.0f, 0.2f, 0.1f});
+    redLight->setIntensity(3.0f);
+    redLight->setRange(8.0f);
+    rootNode_->addChild(redLightNode);
+
+    // Blue spot light: pointing straight down
+    auto spotNode = std::make_shared<SceneNode>("BlueSpotLight");
+    spotNode->getTransform().setPosition(-2.0f, 3.0f, 0.0f);
+    spotNode->getTransform().setRotation(glm::vec3(glm::radians(-90.0f), 0.0f, 0.0f));
+    auto spotLight = spotNode->addComponent<Light>();
+    spotLight->setType(LightType::Spot);
+    spotLight->setColor({0.3f, 0.5f, 1.0f});
+    spotLight->setIntensity(5.0f);
+    spotLight->setRange(12.0f);
+    spotLight->setConeAngles(glm::radians(15.0f), glm::radians(25.0f));
+    rootNode_->addChild(spotNode);
+
+    // --- Camera ---
+    camera_ = std::make_unique<PerspectiveCamera>(45.0f, swapChain_->extent().width / (float)swapChain_->extent().height, 0.1f, 100.0f);
+    camera_->getTransform().setPosition(0.0f, 2.0f, 8.0f);
+    camera_->getTransform().setRotation(glm::vec3(glm::radians(-10.0f), 0.0f, 0.0f));
 
     // Create the controller and give it our camera to control
     cameraController_ = std::make_shared<FirstPersonCameraController>(*camera_, *inputManager_);
@@ -291,6 +336,11 @@ void HelloTriangleApp::onUpdate(float deltaTime) {
     if (inputManager_->isKeyTriggered(GLFW_KEY_R)) {
         cameraController_->reset();
     }
+    if (inputManager_->isKeyTriggered(GLFW_KEY_V)) {
+        bool enabled = !renderer_->isCullingEnabled();
+        renderer_->setCullingEnabled(enabled);
+        LOG_INFO(RENDERING, "Frustum culling {}", enabled ? "enabled" : "disabled");
+    }
 
     // Update scene logic - animate each node independently
     if (rootNode_->getChildCount() > 1) {
@@ -308,6 +358,10 @@ void HelloTriangleApp::onRender() {
     
     if (frameCount_ % DEBUG_FRAME_INTERVAL == 0) {
         LOG_TRACE(GENERAL, "Frame #{} completed", frameCount_);
+        if (renderer_->isCullingEnabled()) {
+            LOG_DEBUG(RENDERING, "Culling stats: {} drawn, {} culled",
+                      renderer_->getDrawnCount(), renderer_->getCulledCount());
+        }
     }
     frameCount_++;
 }

@@ -1,13 +1,25 @@
 #version 450
 
+const uint MAX_LIGHTS = 8;
+
+struct Light {
+    vec4 positionAndType;
+    vec4 directionAndRange;
+    vec4 colorAndIntensity;
+    vec4 spotParams;
+};
+
 layout(binding = 0) uniform GlobalUbo {
     mat4 view;
     mat4 proj;
     vec4 cameraPosition;
-    vec4 lightDirection;
-    vec4 lightColor;
     vec4 ambientColor;
     vec4 debugView;
+    uint lightCount;
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
+    Light lights[MAX_LIGHTS];
 } ubo;
 
 layout(push_constant) uniform PushConstants {

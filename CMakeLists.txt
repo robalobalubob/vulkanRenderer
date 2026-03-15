@@ -88,6 +88,7 @@ add_custom_target(prepare_runtime_content
 # ============================================================================
 
 add_library(vulkan-engine STATIC
+    src/components/Light.cpp
     src/components/MeshRenderer.cpp
     src/core/InputManager.cpp
     src/core/GlfwWindow.cpp

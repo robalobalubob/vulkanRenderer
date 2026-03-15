@@ -12,6 +12,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace vkeng {
@@ -62,9 +63,10 @@ private:
     std::shared_ptr<DescriptorPool> materialDescriptorPool_{}; ///< Persistent pool for material descriptor sets
     VkDescriptorSet fallbackTextureDescriptorSet_{};           ///< Descriptor set using the white fallback texture
 
-    std::shared_ptr<RenderPass> renderPass_{};
-    std::shared_ptr<Pipeline> pipeline_{};
-    VkPipelineLayout pipelineLayout_{};
+    std::shared_ptr<RenderPass>   renderPass_{};
+    std::optional<PipelineCache>  pipelineCache_{};  ///< Must be declared before pipeline_ (destroyed after)
+    std::shared_ptr<Pipeline>     pipeline_{};
+    VkPipelineLayout              pipelineLayout_{};
 
     std::unique_ptr<MeshLoader> meshLoader_{};
     std::unique_ptr<Renderer> renderer_{};

@@ -22,15 +22,16 @@
 #include "vulkan-engine/rendering/Pipeline.hpp"
 #include "vulkan-engine/rendering/RenderPass.hpp"
 #include "vulkan-engine/rendering/CommandPool.hpp"
+#include "vulkan-engine/rendering/Camera.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include <functional>
 #include <memory>
 #include <vector>
 #include <chrono>
+#include <algorithm>
 
 namespace vkeng {
     class SceneNode;
-    class Camera;
     class Mesh;
     class Buffer;
 
@@ -107,6 +108,15 @@ namespace vkeng {
         DebugShadingMode getDebugShadingMode() const { return m_debugShadingMode; }
 
         void setFallbackTextureDescriptorSet(VkDescriptorSet set) { m_fallbackTextureDescriptorSet = set; }
+
+        /** @brief Enable or disable frustum culling. */
+        void setCullingEnabled(bool enabled) { m_cullingEnabled = enabled; }
+        /** @brief Check if frustum culling is enabled. */
+        bool isCullingEnabled() const { return m_cullingEnabled; }
+        /** @brief Get the number of meshes drawn last frame. */
+        uint32_t getDrawnCount() const { return m_drawnCount; }
+        /** @brief Get the number of meshes culled last frame. */
+        uint32_t getCulledCount() const { return m_culledCount; }
 
         /**
          * @brief Sets the callback for swapchain recreation.
@@ -227,6 +237,13 @@ namespace vkeng {
 
         void renderNode(VkCommandBuffer commandBuffer, const SceneNode& node);
 
+        /**
+         * @brief Collects all active Light components from the scene graph
+         * @param root Root node to traverse
+         * @param outLights Output vector of GPU light structs (capped at MAX_LIGHTS)
+         */
+        void collectLights(const SceneNode& root, std::vector<GpuLight>& outLights);
+
         // ============================================================================
         // Core Vulkan Object References
         // ============================================================================
@@ -266,6 +283,17 @@ namespace vkeng {
         DebugShadingMode m_debugShadingMode = DebugShadingMode::Lit;
 
         VkDescriptorSet m_fallbackTextureDescriptorSet = VK_NULL_HANDLE;
+
+        std::vector<GpuLight> m_collectedLights;  ///< Lights gathered from scene graph each frame
+
+        // ============================================================================
+        // Frustum Culling
+        // ============================================================================
+
+        Frustum m_frustum;                         ///< Current frame's camera frustum
+        bool m_cullingEnabled = true;              ///< Toggle for frustum culling
+        uint32_t m_drawnCount = 0;                 ///< Meshes drawn this frame
+        uint32_t m_culledCount = 0;                ///< Meshes culled this frame
 
         // ============================================================================
         // Multi-Frame Synchronization

@@ -1,19 +1,91 @@
 #include "vulkan-engine/rendering/Pipeline.hpp"
 #include "vulkan-engine/rendering/Vertex.hpp"
+#include "vulkan-engine/core/Logger.hpp"
 #include <stdexcept>
 #include <fstream>
 #include <vulkan/vulkan_core.h>
 
 namespace vkeng {
+
+    // ============================================================================
+    // PipelineCache
+    // ============================================================================
+
+    PipelineCache::PipelineCache(VkDevice device, const std::filesystem::path& cacheFilePath)
+        : m_device(device), m_cacheFilePath(cacheFilePath) {
+
+        // Attempt to load previously saved cache data from disk.
+        std::vector<char> initialData;
+        std::ifstream cacheFile(m_cacheFilePath, std::ios::binary | std::ios::ate);
+        if (cacheFile.is_open()) {
+            const auto fileSize = static_cast<size_t>(cacheFile.tellg());
+            if (fileSize > 0) {
+                initialData.resize(fileSize);
+                cacheFile.seekg(0);
+                cacheFile.read(initialData.data(), static_cast<std::streamsize>(fileSize));
+                LOG_INFO(RENDERING, "Loaded pipeline cache from disk ({} bytes)", fileSize);
+            }
+        }
+
+        // The driver validates the blob header (vendor/device/driver IDs) before
+        // using it. Stale or wrong-GPU data is silently discarded, so it is always
+        // safe to pass whatever is on disk.
+        VkPipelineCacheCreateInfo cacheInfo{};
+        cacheInfo.sType           = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+        cacheInfo.initialDataSize = initialData.size();
+        cacheInfo.pInitialData    = initialData.empty() ? nullptr : initialData.data();
+
+        if (vkCreatePipelineCache(m_device, &cacheInfo, nullptr, &m_cache) != VK_SUCCESS) {
+            // Non-fatal: VK_NULL_HANDLE is valid for vkCreateGraphicsPipelines.
+            // Pipeline creation still works, just without caching.
+            LOG_WARN(RENDERING, "Failed to create VkPipelineCache; pipeline compilation will not be cached");
+            m_cache = VK_NULL_HANDLE;
+        }
+    }
+
+    PipelineCache::~PipelineCache() noexcept {
+        if (m_cache != VK_NULL_HANDLE) {
+            saveToDisk();
+            vkDestroyPipelineCache(m_device, m_cache, nullptr);
+        }
+    }
+
+    void PipelineCache::saveToDisk() noexcept {
+        // Two-call Vulkan idiom: query required size, then retrieve data.
+        // This pattern appears throughout the API for variable-size queries.
+        size_t dataSize = 0;
+        if (vkGetPipelineCacheData(m_device, m_cache, &dataSize, nullptr) != VK_SUCCESS
+            || dataSize == 0) {
+            LOG_WARN(RENDERING, "vkGetPipelineCacheData returned 0 bytes; cache not saved");
+            return;
+        }
+
+        std::vector<char> data(dataSize);
+        if (vkGetPipelineCacheData(m_device, m_cache, &dataSize, data.data()) != VK_SUCCESS) {
+            LOG_WARN(RENDERING, "Failed to retrieve pipeline cache data");
+            return;
+        }
+
+        std::ofstream outFile(m_cacheFilePath, std::ios::binary | std::ios::trunc);
+        if (!outFile) {
+            LOG_WARN(RENDERING, "Could not open {} for writing; cache not saved",
+                     m_cacheFilePath.string());
+            return;
+        }
+        outFile.write(data.data(), static_cast<std::streamsize>(dataSize));
+        LOG_INFO(RENDERING, "Saved pipeline cache to {} ({} bytes)",
+                 m_cacheFilePath.string(), dataSize);
+    }
     /**
      * @brief Constructs the graphics pipeline.
      * @details This constructor configures the entire graphics pipeline state,
      * including shader stages, vertex input, rasterization, and color blending.
      */
-    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent, 
-                   const std::filesystem::path& vertPath, const std::filesystem::path& fragPath)
+    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent,
+                   const std::filesystem::path& vertPath, const std::filesystem::path& fragPath,
+                   VkPipelineCache cache)
         : device_(device), layout_(pipelineLayout), renderPass_(rp), extent_(extent), vertPath_(vertPath), fragPath_(fragPath) {
-        
+
         // --- 1. Load Shader Modules ---
         auto vertShaderCode = readFile(vertPath);
         auto fragShaderCode = readFile(fragPath);
@@ -21,21 +93,23 @@ namespace vkeng {
         VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
         VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
-        createGraphicsPipeline(vertShaderModule, fragShaderModule);
+        createGraphicsPipeline(vertShaderModule, fragShaderModule, cache);
 
         // Shader modules can be destroyed after the pipeline is created.
         vkDestroyShaderModule(device_, fragShaderModule, nullptr);
         vkDestroyShaderModule(device_, vertShaderModule, nullptr);
     }
 
-    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent, 
-                   VkShaderModule vertModule, VkShaderModule fragModule)
+    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent,
+                   VkShaderModule vertModule, VkShaderModule fragModule,
+                   VkPipelineCache cache)
         : device_(device), layout_(pipelineLayout), renderPass_(rp), extent_(extent) {
-        
-        createGraphicsPipeline(vertModule, fragModule);
+
+        createGraphicsPipeline(vertModule, fragModule, cache);
     }
 
-    void Pipeline::createGraphicsPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule) {
+    void Pipeline::createGraphicsPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
+                                           VkPipelineCache cache) {
         VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
         vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -163,7 +237,7 @@ namespace vkeng {
         pipelineInfo.subpass = 0;
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-        if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_) != VK_SUCCESS) {
+        if (vkCreateGraphicsPipelines(device_, cache, 1, &pipelineInfo, nullptr, &pipeline_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create graphics pipeline!");
         }
     }

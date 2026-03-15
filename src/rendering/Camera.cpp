@@ -191,14 +191,127 @@ namespace vkeng {
         return proj;
     }
 
-    /**
-     * @brief Calculates the viewing frustum for this camera.
-     * @note This is a placeholder for future implementation.
-     * @return An empty Frustum object.
-     */
     Frustum PerspectiveCamera::getFrustum() const {
-        // TODO: Implement frustum extraction from the view-projection matrix.
-        return Frustum{};
+        return Frustum::fromMatrix(getViewProjectionMatrix());
+    }
+
+    // ============================================================================
+    // Frustum
+    // ============================================================================
+
+    /**
+     * @brief Extracts frustum planes from a combined view-projection matrix.
+     *
+     * Uses the Griess-Hartmann method: each frustum plane corresponds to a
+     * row-combination of the VP matrix derived from clip-space inequalities.
+     * Vulkan uses depth range [0,1], so the near plane is row2 (not row3+row2
+     * as in OpenGL's [-1,1] range). The Vulkan Y-flip baked into the projection
+     * matrix is automatically accounted for.
+     *
+     * After extraction, each plane is normalized so that distanceToPoint()
+     * returns the true Euclidean signed distance — required for sphere tests.
+     */
+    Frustum Frustum::fromMatrix(const glm::mat4& vp) {
+        Frustum frustum;
+
+        // GLM is column-major: vp[col][row].
+        // Row i is accessed as: vp[0][i], vp[1][i], vp[2][i], vp[3][i].
+
+        // Left:   row3 + row0  (clip: x >= -w)
+        frustum.planes[LEFT].normal.x = vp[0][3] + vp[0][0];
+        frustum.planes[LEFT].normal.y = vp[1][3] + vp[1][0];
+        frustum.planes[LEFT].normal.z = vp[2][3] + vp[2][0];
+        frustum.planes[LEFT].distance = vp[3][3] + vp[3][0];
+
+        // Right:  row3 - row0  (clip: x <= w)
+        frustum.planes[RIGHT].normal.x = vp[0][3] - vp[0][0];
+        frustum.planes[RIGHT].normal.y = vp[1][3] - vp[1][0];
+        frustum.planes[RIGHT].normal.z = vp[2][3] - vp[2][0];
+        frustum.planes[RIGHT].distance = vp[3][3] - vp[3][0];
+
+        // Bottom: row3 + row1  (clip: y >= -w)
+        frustum.planes[BOTTOM].normal.x = vp[0][3] + vp[0][1];
+        frustum.planes[BOTTOM].normal.y = vp[1][3] + vp[1][1];
+        frustum.planes[BOTTOM].normal.z = vp[2][3] + vp[2][1];
+        frustum.planes[BOTTOM].distance = vp[3][3] + vp[3][1];
+
+        // Top:    row3 - row1  (clip: y <= w)
+        frustum.planes[TOP].normal.x = vp[0][3] - vp[0][1];
+        frustum.planes[TOP].normal.y = vp[1][3] - vp[1][1];
+        frustum.planes[TOP].normal.z = vp[2][3] - vp[2][1];
+        frustum.planes[TOP].distance = vp[3][3] - vp[3][1];
+
+        // Near:   row2  (clip: z >= 0, Vulkan depth [0,1])
+        frustum.planes[NEAR].normal.x = vp[0][2];
+        frustum.planes[NEAR].normal.y = vp[1][2];
+        frustum.planes[NEAR].normal.z = vp[2][2];
+        frustum.planes[NEAR].distance = vp[3][2];
+
+        // Far:    row3 - row2  (clip: z <= w)
+        frustum.planes[FAR].normal.x = vp[0][3] - vp[0][2];
+        frustum.planes[FAR].normal.y = vp[1][3] - vp[1][2];
+        frustum.planes[FAR].normal.z = vp[2][3] - vp[2][2];
+        frustum.planes[FAR].distance = vp[3][3] - vp[3][2];
+
+        // Normalize all planes so distanceToPoint returns true Euclidean distance
+        for (auto& plane : frustum.planes) {
+            float len = glm::length(plane.normal);
+            if (len > 0.0f) {
+                plane.normal /= len;
+                plane.distance /= len;
+            }
+        }
+
+        return frustum;
+    }
+
+    bool Frustum::containsPoint(const glm::vec3& point) const {
+        for (const auto& plane : planes) {
+            if (plane.distanceToPoint(point) < 0.0f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @brief Tests whether a bounding sphere intersects the frustum.
+     *
+     * For each plane, if the sphere center is farther than `radius` on the
+     * outside (signed distance < -radius), the sphere is entirely outside
+     * that plane and cannot be visible. This is the primary culling test:
+     * 6 dot products + 6 comparisons.
+     */
+    bool Frustum::intersectsSphere(const glm::vec3& center, float radius) const {
+        for (const auto& plane : planes) {
+            if (plane.distanceToPoint(center) < -radius) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @brief Tests whether an axis-aligned bounding box intersects the frustum.
+     *
+     * For each plane, finds the AABB corner most aligned with the plane normal
+     * (the "p-vertex"). If even that corner is on the outside, the entire AABB
+     * is outside. This is tighter than a sphere test but requires the AABB to
+     * already be in the same space as the frustum (world space).
+     */
+    bool Frustum::intersectsAABB(const glm::vec3& min, const glm::vec3& max) const {
+        for (const auto& plane : planes) {
+            // p-vertex: the corner farthest in the direction of the plane normal
+            glm::vec3 pVertex;
+            pVertex.x = (plane.normal.x >= 0.0f) ? max.x : min.x;
+            pVertex.y = (plane.normal.y >= 0.0f) ? max.y : min.y;
+            pVertex.z = (plane.normal.z >= 0.0f) ? max.z : min.z;
+
+            if (plane.distanceToPoint(pVertex) < 0.0f) {
+                return false;
+            }
+        }
+        return true;
     }
 
 } // namespace vkeng
