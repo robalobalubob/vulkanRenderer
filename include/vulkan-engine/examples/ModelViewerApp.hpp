@@ -4,7 +4,9 @@
 #include "vulkan-engine/core/Engine.hpp"
 #include "vulkan-engine/rendering/OrbitCameraController.hpp"
 #include "vulkan-engine/rendering/Pipeline.hpp"
+#include "vulkan-engine/rendering/PipelineManager.hpp"
 #include "vulkan-engine/rendering/Renderer.hpp"
+#include "vulkan-engine/rendering/ShadowPass.hpp"
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/resources/Material.hpp"
@@ -12,7 +14,6 @@
 
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <vector>
 
 namespace vkeng {
@@ -63,10 +64,15 @@ private:
     std::shared_ptr<DescriptorPool> materialDescriptorPool_{}; ///< Persistent pool for material descriptor sets
     VkDescriptorSet fallbackTextureDescriptorSet_{};           ///< Descriptor set using the white fallback texture
 
-    std::shared_ptr<RenderPass>   renderPass_{};
-    std::optional<PipelineCache>  pipelineCache_{};  ///< Must be declared before pipeline_ (destroyed after)
-    std::shared_ptr<Pipeline>     pipeline_{};
-    VkPipelineLayout              pipelineLayout_{};
+    std::shared_ptr<RenderPass>         renderPass_{};
+    std::unique_ptr<PipelineManager>    pipelineManager_{};
+    PipelineConfig                      defaultPipelineConfig_{};
+
+    // Shadow mapping
+    std::unique_ptr<ShadowPass>         shadowPass_{};
+    std::shared_ptr<DescriptorSetLayout> shadowSetLayout_{};
+    VkDescriptorSet                     shadowDescriptorSet_{};
+    PipelineConfig                      shadowPipelineConfig_{};
 
     std::unique_ptr<MeshLoader> meshLoader_{};
     std::unique_ptr<Renderer> renderer_{};

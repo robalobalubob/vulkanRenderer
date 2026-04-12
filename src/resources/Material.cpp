@@ -26,22 +26,35 @@ bool Material::hasAnyTexture() const {
 void Material::createDescriptorSet(VkDevice device,
                                    std::shared_ptr<DescriptorPool> pool,
                                    std::shared_ptr<DescriptorSetLayout> layout,
-                                   std::shared_ptr<Texture> fallbackTexture) {
+                                   const FallbackTextures& fallbacks) {
     auto result = pool->allocateDescriptorSet(layout);
     if (!result) {
         throw std::runtime_error("Failed to allocate descriptor set for material: " + getName());
     }
     m_descriptorSet = result.getValue();
 
-    // Resolve each texture slot: use actual texture if present, otherwise fallback
-    auto baseColor = m_textures.baseColor ? m_textures.baseColor : fallbackTexture;
+    // Resolve each texture slot: use actual texture if present, otherwise appropriate fallback
+    auto baseColor         = m_textures.baseColor         ? m_textures.baseColor         : fallbacks.white;
+    auto normal            = m_textures.normal            ? m_textures.normal            : fallbacks.flatNormal;
+    auto metallicRoughness = m_textures.metallicRoughness ? m_textures.metallicRoughness : fallbacks.metallicRoughness;
+    auto occlusion         = m_textures.occlusion         ? m_textures.occlusion         : fallbacks.white;
+    auto emissive          = m_textures.emissive          ? m_textures.emissive          : fallbacks.white;
 
     DescriptorSet descriptorSetWrapper(device, m_descriptorSet, layout);
     descriptorSetWrapper.writeImage(0, baseColor->getImage(), baseColor->getSampler());
+    descriptorSetWrapper.writeImage(1, normal->getImage(), normal->getSampler());
+    descriptorSetWrapper.writeImage(2, metallicRoughness->getImage(), metallicRoughness->getSampler());
+    descriptorSetWrapper.writeImage(3, occlusion->getImage(), occlusion->getSampler());
+    descriptorSetWrapper.writeImage(4, emissive->getImage(), emissive->getSampler());
     descriptorSetWrapper.update();
 
-    LOG_DEBUG(RENDERING, "Created descriptor set for material '{}' (baseColor={})",
-              getName(), m_textures.baseColor ? "custom" : "fallback");
+    LOG_DEBUG(RENDERING, "Created PBR descriptor set for material '{}' (baseColor={}, normal={}, MR={}, occlusion={}, emissive={})",
+              getName(),
+              m_textures.baseColor ? "custom" : "fallback",
+              m_textures.normal ? "custom" : "fallback",
+              m_textures.metallicRoughness ? "custom" : "fallback",
+              m_textures.occlusion ? "custom" : "fallback",
+              m_textures.emissive ? "custom" : "fallback");
 }
 
 } // namespace vkeng

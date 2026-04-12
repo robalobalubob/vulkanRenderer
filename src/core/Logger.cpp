@@ -119,6 +119,8 @@ std::string Logger::categoryToString(LogCategory category) {
         case LogCategory::RENDERING:return "REN";
         case LogCategory::VULKAN:   return "VK ";
         case LogCategory::MEMORY:   return "MEM";
+        case LogCategory::PHYSICS:  return "PHY";
+        case LogCategory::AUDIO:    return "AUD";
         default: return "UNK";
     }
 }

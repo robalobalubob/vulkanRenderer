@@ -3,7 +3,9 @@
 #include "vulkan-engine/core/Engine.hpp"
 #include "vulkan-engine/rendering/CameraController.hpp"
 #include "vulkan-engine/rendering/Pipeline.hpp"
+#include "vulkan-engine/rendering/PipelineManager.hpp"
 #include "vulkan-engine/rendering/Renderer.hpp"
+#include "vulkan-engine/rendering/ShadowPass.hpp"
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
@@ -55,10 +57,15 @@ namespace vkeng {
         // Vulkan Rendering Pipeline
         // ============================================================================
         
-        std::shared_ptr<RenderPass>   renderPass_{};                  ///< Render pass definition
-        std::optional<PipelineCache>  pipelineCache_{};             ///< Must be declared before pipeline_ (destroyed after)
-        std::shared_ptr<Pipeline>     pipeline_{};                  ///< Graphics pipeline
-        VkPipelineLayout              pipelineLayout_{};            ///< Pipeline layout for resources
+        std::shared_ptr<RenderPass>         renderPass_{};              ///< Render pass definition
+        std::unique_ptr<PipelineManager>    pipelineManager_{};     ///< Pipeline variant cache + layout
+        PipelineConfig                      defaultPipelineConfig_{}; ///< Default opaque pipeline config
+
+        // Shadow mapping
+        std::unique_ptr<ShadowPass>         shadowPass_{};
+        std::shared_ptr<DescriptorSetLayout> shadowSetLayout_{};    ///< Layout for shadow map descriptor (set 2)
+        VkDescriptorSet                     shadowDescriptorSet_{};  ///< Shadow map descriptor set
+        PipelineConfig                      shadowPipelineConfig_{}; ///< Depth-only shadow pipeline config
 
         // ============================================================================
         // Rendering and Camera System

@@ -1,4 +1,5 @@
 #include "vulkan-engine/resources/MeshLoader.hpp"
+#include "vulkan-engine/rendering/Vertex.hpp"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <glm/geometric.hpp>
@@ -210,6 +211,7 @@ namespace vkeng {
                 }
             }
 
+            Vertex::computeTangents(vertices, indices);
             return Result(std::make_shared<Mesh>(path, m_memoryManager, vertices, indices, MeshNormalSource::GeneratedFlat));
         }
 
@@ -235,6 +237,7 @@ namespace vkeng {
             ? MeshNormalSource::Authored
             : MeshNormalSource::GeneratedSmooth;
 
+        Vertex::computeTangents(vertices, indices);
         return Result(std::make_shared<Mesh>(path, m_memoryManager, vertices, indices, normalSource));
     }
 } // namespace vkeng

@@ -82,20 +82,38 @@ namespace vkeng {
      * including shader stages, vertex input, rasterization, and color blending.
      */
     Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent,
+                   const PipelineConfig& config, VkPipelineCache cache)
+        : device_(device), layout_(pipelineLayout), renderPass_(rp), extent_(extent),
+          config_(config), vertPath_(config.vertShaderPath), fragPath_(config.fragShaderPath) {
+
+        auto vertShaderCode = readFile(config.vertShaderPath);
+        auto fragShaderCode = readFile(config.fragShaderPath);
+
+        VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+        VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+        createGraphicsPipeline(vertShaderModule, fragShaderModule, cache, config);
+
+        vkDestroyShaderModule(device_, fragShaderModule, nullptr);
+        vkDestroyShaderModule(device_, vertShaderModule, nullptr);
+    }
+
+    Pipeline::Pipeline(VkDevice device, VkRenderPass rp, VkPipelineLayout pipelineLayout, VkExtent2D extent,
                    const std::filesystem::path& vertPath, const std::filesystem::path& fragPath,
                    VkPipelineCache cache)
         : device_(device), layout_(pipelineLayout), renderPass_(rp), extent_(extent), vertPath_(vertPath), fragPath_(fragPath) {
 
-        // --- 1. Load Shader Modules ---
+        config_.vertShaderPath = vertPath;
+        config_.fragShaderPath = fragPath;
+
         auto vertShaderCode = readFile(vertPath);
         auto fragShaderCode = readFile(fragPath);
 
         VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
         VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
-        createGraphicsPipeline(vertShaderModule, fragShaderModule, cache);
+        createGraphicsPipeline(vertShaderModule, fragShaderModule, cache, config_);
 
-        // Shader modules can be destroyed after the pipeline is created.
         vkDestroyShaderModule(device_, fragShaderModule, nullptr);
         vkDestroyShaderModule(device_, vertShaderModule, nullptr);
     }
@@ -105,11 +123,11 @@ namespace vkeng {
                    VkPipelineCache cache)
         : device_(device), layout_(pipelineLayout), renderPass_(rp), extent_(extent) {
 
-        createGraphicsPipeline(vertModule, fragModule, cache);
+        createGraphicsPipeline(vertModule, fragModule, cache, config_);
     }
 
     void Pipeline::createGraphicsPipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
-                                           VkPipelineCache cache) {
+                                           VkPipelineCache cache, const PipelineConfig& config) {
         VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
         vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -164,16 +182,27 @@ namespace vkeng {
         viewportState.pScissors = &scissor;
 
         // --- 5. Rasterization State ---
-        // Configures how geometry is turned into fragments.
         VkPipelineRasterizationStateCreateInfo rasterizer{};
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.depthClampEnable = VK_FALSE;
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        rasterizer.depthBiasEnable = VK_FALSE;
+        if (config.depthOnly) {
+            rasterizer.depthBiasEnable = VK_TRUE;
+            rasterizer.depthBiasConstantFactor = 1.25f;
+            rasterizer.depthBiasSlopeFactor = 1.75f;
+            rasterizer.depthBiasClamp = 0.0f;
+        } else {
+            rasterizer.depthBiasEnable = VK_FALSE;
+        }
+
+        switch (config.cullMode) {
+            case CullMode::None:  rasterizer.cullMode = VK_CULL_MODE_NONE; break;
+            case CullMode::Back:  rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; break;
+            case CullMode::Front: rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT; break;
+        }
 
         // --- 6. Multisample State ---
         // Configures anti-aliasing.
@@ -183,23 +212,38 @@ namespace vkeng {
         multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
         // --- 7. Color Blend State ---
-        // Configures how fragment shader output is blended with the framebuffer.
         VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | 
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorBlendAttachment.blendEnable = VK_FALSE;
+
+        if (config.blendMode == BlendMode::AlphaBlend) {
+            colorBlendAttachment.blendEnable = VK_TRUE;
+            colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+            colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        } else {
+            colorBlendAttachment.blendEnable = VK_FALSE;
+        }
 
         VkPipelineColorBlendStateCreateInfo colorBlending{};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlending.logicOpEnable = VK_FALSE;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
+        if (config.depthOnly) {
+            colorBlending.attachmentCount = 0;
+            colorBlending.pAttachments = nullptr;
+        } else {
+            colorBlending.attachmentCount = 1;
+            colorBlending.pAttachments = &colorBlendAttachment;
+        }
 
         // --- 7b. Depth Stencil State ---
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        depthStencil.depthTestEnable = VK_TRUE;
-        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthTestEnable = config.depthTestEnable ? VK_TRUE : VK_FALSE;
+        depthStencil.depthWriteEnable = config.depthWriteEnable ? VK_TRUE : VK_FALSE;
         depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.minDepthBounds = 0.0f; // Optional

@@ -428,7 +428,7 @@ namespace vkeng {
         
         std::vector<VkDescriptorPoolSize> poolSizes = {
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, maxSets * 2},
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 4},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, maxSets * 6},
             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, maxSets},
             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, maxSets}
         };

@@ -1,4 +1,5 @@
 #include "vulkan-engine/resources/PrimitiveFactory.hpp"
+#include "vulkan-engine/rendering/Vertex.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,7 +20,10 @@ std::shared_ptr<Mesh> PrimitiveFactory::createQuad(std::shared_ptr<MemoryManager
     const std::vector<uint32_t> indices = {
         0, 1, 2, 2, 3, 0
     };
-    return std::make_shared<Mesh>("primitive_quad", memoryManager, vertices, indices);
+    auto verts = vertices;
+    auto inds = indices;
+    Vertex::computeTangents(verts, inds);
+    return std::make_shared<Mesh>("primitive_quad", memoryManager, verts, inds);
 }
 
 std::shared_ptr<Mesh> PrimitiveFactory::createCube(std::shared_ptr<MemoryManager> memoryManager) {
@@ -65,7 +69,10 @@ std::shared_ptr<Mesh> PrimitiveFactory::createCube(std::shared_ptr<MemoryManager
         16, 17, 18, 18, 19, 16, // right
         20, 21, 22, 22, 23, 20  // left
     };
-    return std::make_shared<Mesh>("primitive_cube", memoryManager, vertices, indices);
+    auto verts = vertices;
+    auto inds = indices;
+    Vertex::computeTangents(verts, inds);
+    return std::make_shared<Mesh>("primitive_cube", memoryManager, verts, inds);
 }
 
 std::shared_ptr<Mesh> PrimitiveFactory::createPlane(std::shared_ptr<MemoryManager> memoryManager,
@@ -118,6 +125,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createPlane(std::shared_ptr<MemoryManage
         }
     }
 
+    Vertex::computeTangents(vertices, indices);
     return std::make_shared<Mesh>("primitive_plane", memoryManager, vertices, indices);
 }
 
@@ -232,6 +240,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createCylinder(std::shared_ptr<MemoryMan
         indices.push_back(bottomRingBase + i);
     }
 
+    Vertex::computeTangents(vertices, indices);
     return std::make_shared<Mesh>("primitive_cylinder", memoryManager, vertices, indices);
 }
 
@@ -315,6 +324,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createCone(std::shared_ptr<MemoryManager
         indices.push_back(ringBase + i);
     }
 
+    Vertex::computeTangents(vertices, indices);
     return std::make_shared<Mesh>("primitive_cone", memoryManager, vertices, indices);
 }
 
@@ -376,6 +386,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createTorus(std::shared_ptr<MemoryManage
         }
     }
 
+    Vertex::computeTangents(vertices, indices);
     return std::make_shared<Mesh>("primitive_torus", memoryManager, vertices, indices, MeshNormalSource::Authored);
 }
 
@@ -438,6 +449,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createUvSphere(std::shared_ptr<MemoryMan
         }
     }
 
+    Vertex::computeTangents(vertices, indices);
     return std::make_shared<Mesh>("primitive_uv_sphere", memoryManager, vertices, indices, MeshNormalSource::Authored);
 }
 

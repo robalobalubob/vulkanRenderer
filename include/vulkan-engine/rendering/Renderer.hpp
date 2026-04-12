@@ -20,10 +20,13 @@
 #include "vulkan-engine/core/VulkanDevice.hpp"
 #include "vulkan-engine/core/VulkanSwapChain.hpp"
 #include "vulkan-engine/rendering/Pipeline.hpp"
+#include "vulkan-engine/rendering/PipelineManager.hpp"
 #include "vulkan-engine/rendering/RenderPass.hpp"
 #include "vulkan-engine/rendering/CommandPool.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
+#include "vulkan-engine/rendering/ShadowPass.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
+#include "vulkan-engine/resources/Material.hpp"
 #include <functional>
 #include <memory>
 #include <vector>
@@ -79,9 +82,10 @@ namespace vkeng {
          * @note All referenced objects must remain valid for the renderer's lifetime
          * @warning May throw exceptions if resource creation fails
          */
-        Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapChain, 
-                 std::shared_ptr<RenderPass> renderPass, std::shared_ptr<Pipeline> pipeline);
-        
+        Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapChain,
+                 std::shared_ptr<RenderPass> renderPass, PipelineManager& pipelineManager,
+                 const PipelineConfig& defaultConfig);
+
         ~Renderer();
 
         Renderer(const Renderer&) = delete;
@@ -92,10 +96,8 @@ namespace vkeng {
          */
         void setRenderPass(std::shared_ptr<RenderPass> renderPass) { m_renderPass = renderPass; }
 
-        /**
-         * @brief Sets the Pipeline to be used.
-         */
-        void setPipeline(std::shared_ptr<Pipeline> pipeline) { m_pipeline = pipeline; }
+        /** @brief Invalidate cached pipelines (call after render pass / extent change). */
+        void invalidatePipelines() { m_pipelineManager.invalidateAll(); }
 
         /**
          * @brief Callback type for swapchain recreation.
@@ -108,6 +110,13 @@ namespace vkeng {
         DebugShadingMode getDebugShadingMode() const { return m_debugShadingMode; }
 
         void setFallbackTextureDescriptorSet(VkDescriptorSet set) { m_fallbackTextureDescriptorSet = set; }
+
+        /** @brief Set the shadow pass for directional shadow mapping. */
+        void setShadowPass(ShadowPass* shadowPass) { m_shadowPass = shadowPass; }
+        /** @brief Set the descriptor set for the shadow map (set 2). */
+        void setShadowDescriptorSet(VkDescriptorSet set) { m_shadowDescriptorSet = set; }
+        /** @brief Set the shadow pipeline config (depth-only, front-face cull). */
+        void setShadowPipelineConfig(const PipelineConfig& config) { m_shadowConfig = config; }
 
         /** @brief Enable or disable frustum culling. */
         void setCullingEnabled(bool enabled) { m_cullingEnabled = enabled; }
@@ -252,8 +261,9 @@ namespace vkeng {
         VulkanDevice& m_device;                         ///< Vulkan device wrapper for command submission
         VulkanSwapChain& m_swapChain;                   ///< Swap chain for image presentation
         std::shared_ptr<RenderPass> m_renderPass;       ///< Render pass defining rendering operations
-        std::shared_ptr<Pipeline> m_pipeline;           ///< Graphics pipeline for drawing
-        
+        PipelineManager& m_pipelineManager;             ///< Pipeline variant cache
+        PipelineConfig m_defaultConfig;                 ///< Default (opaque) pipeline config
+
         RecreateCallback m_recreateCallback;            ///< Callback invoked during swapchain recreation
 
         // ============================================================================
@@ -284,7 +294,42 @@ namespace vkeng {
 
         VkDescriptorSet m_fallbackTextureDescriptorSet = VK_NULL_HANDLE;
 
+        // ============================================================================
+        // Shadow Mapping
+        // ============================================================================
+
+        ShadowPass* m_shadowPass = nullptr;                ///< Non-owning pointer to shadow pass (null = no shadows)
+        VkDescriptorSet m_shadowDescriptorSet = VK_NULL_HANDLE; ///< Shadow map descriptor set (set 2)
+        PipelineConfig m_shadowConfig{};                    ///< Pipeline config for shadow depth pass
+        glm::mat4 m_lightSpaceMatrix{1.f};                 ///< Cached light-space VP matrix
+
+        void recordShadowPass(VkCommandBuffer commandBuffer, VkDescriptorSet uboDescriptorSet);
+        glm::mat4 computeLightSpaceMatrix(const SceneNode& root) const;
+
         std::vector<GpuLight> m_collectedLights;  ///< Lights gathered from scene graph each frame
+
+        // ============================================================================
+        // Draw Call Queue (collected per-frame, sorted, then issued)
+        // ============================================================================
+
+        /** @brief A deferred draw call collected during scene traversal. */
+        struct DrawCall {
+            std::shared_ptr<Mesh> mesh;
+            MeshPushConstants pushConstants;
+            VkDescriptorSet textureDescriptorSet;
+            BlendMode blendMode;
+            CullMode cullMode;
+            float distanceToCamera;  ///< For back-to-front sorting of transparent objects
+        };
+
+        std::vector<DrawCall> m_opaqueDrawCalls;       ///< Opaque + alpha-mask draws
+        std::vector<DrawCall> m_transparentDrawCalls;   ///< Alpha-blend draws (sorted back-to-front)
+
+        /** @brief Collect draw calls from the scene graph (replaces immediate renderNode drawing). */
+        void collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPos);
+
+        /** @brief Issue all collected draw calls with correct pipeline binding. */
+        void issueDrawCalls(VkCommandBuffer commandBuffer);
 
         // ============================================================================
         // Frustum Culling

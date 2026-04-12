@@ -24,6 +24,7 @@ namespace vkeng {
         glm::vec3 color{1.0f, 1.0f, 1.0f};      ///< Optional vertex color.
         glm::vec2 texCoord{0.0f, 0.0f};         ///< The texture coordinates of the vertex.
         glm::vec3 normal{0.0f, 0.0f, 1.0f};     ///< The vertex normal in object space.
+        glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f}; ///< Tangent vector (xyz) + bitangent sign (w).
 
         /**
          * @brief Gets the binding description for the Vertex struct.
@@ -47,6 +48,13 @@ namespace vkeng {
         static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();
 
         /**
+         * @brief Computes tangent vectors for a mesh from its triangle topology and UVs.
+         * @param vertices The vertex buffer (tangents are written in-place).
+         * @param indices The index buffer defining triangle topology.
+         */
+        static void computeTangents(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+
+        /**
          * @brief Equality operator for Vertex comparison.
          * @param other The other vertex to compare with.
          * @return True if vertices are equal, false otherwise.
@@ -55,7 +63,8 @@ namespace vkeng {
             return pos == other.pos &&
                    color == other.color &&
                    texCoord == other.texCoord &&
-                   normal == other.normal;
+                   normal == other.normal &&
+                   tangent == other.tangent;
         }
     };
 }
@@ -77,10 +86,15 @@ namespace std {
             size_t h9 = hash<float>{}(vertex.normal.x);
             size_t h10 = hash<float>{}(vertex.normal.y);
             size_t h11 = hash<float>{}(vertex.normal.z);
-            
+            size_t h12 = hash<float>{}(vertex.tangent.x);
+            size_t h13 = hash<float>{}(vertex.tangent.y);
+            size_t h14 = hash<float>{}(vertex.tangent.z);
+            size_t h15 = hash<float>{}(vertex.tangent.w);
+
             // Use a simple hash combination
             return h1 ^ (h2 << 1) ^ (h3 << 2) ^ (h4 << 3) ^ (h5 << 4) ^ (h6 << 5) ^
-                   (h7 << 6) ^ (h8 << 7) ^ (h9 << 8) ^ (h10 << 9) ^ (h11 << 10);
+                   (h7 << 6) ^ (h8 << 7) ^ (h9 << 8) ^ (h10 << 9) ^ (h11 << 10) ^
+                   (h12 << 11) ^ (h13 << 12) ^ (h14 << 13) ^ (h15 << 14);
         }
     };
 }

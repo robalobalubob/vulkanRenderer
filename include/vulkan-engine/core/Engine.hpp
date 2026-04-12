@@ -23,8 +23,11 @@
 #include "vulkan-engine/core/InputManager.hpp"
 #include "vulkan-engine/core/MemoryManager.hpp"
 #include "vulkan-engine/core/Logger.hpp"
+#include "vulkan-engine/core/Time.hpp"
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/resources/Texture.hpp"
+#include "vulkan-engine/physics/PhysicsWorld.hpp"
+#include "vulkan-engine/audio/AudioEngine.hpp"
 
 #include <GLFW/glfw3.h>
 #include <memory>
@@ -98,11 +101,22 @@ namespace vkeng {
         /**
          * @brief Called each frame with the time since last frame
          * @param deltaTime Time in seconds since last update
-         * 
-         * Derived classes should update game logic, animations, physics,
+         *
+         * Derived classes should update game logic, animations,
          * and camera movement here.
          */
         virtual void onUpdate(float deltaTime) = 0;
+
+        /**
+         * @brief Called at a fixed rate for deterministic simulation
+         * @param fixedDeltaTime The fixed timestep interval (default 1/60s)
+         *
+         * Called zero or more times per frame from a fixed-timestep accumulator.
+         * Physics updates and other simulation logic that requires determinism
+         * should go here. Override to add game-specific fixed-rate logic.
+         * The base implementation steps the PhysicsWorld if a scene root is set.
+         */
+        virtual void onFixedUpdate(float fixedDeltaTime);
         
         /**
          * @brief Called each frame for rendering
@@ -144,6 +158,19 @@ namespace vkeng {
         // Core Systems - Available to derived classes
         // ============================================================================
         
+        /**
+         * @brief Set the root scene node for physics and audio processing.
+         * @param root Pointer to the scene root (not owned by Engine).
+         *
+         * Call this from onInit() after building the scene graph so that
+         * the physics and audio systems know what to process.
+         */
+        void setSceneRoot(SceneNode* root) { m_sceneRoot = root; }
+
+        // ============================================================================
+        // Core Systems - Available to derived classes
+        // ============================================================================
+
         Config config_;                                 ///< Engine configuration
         std::unique_ptr<IWindow> window_;               ///< Window abstraction
         std::unique_ptr<InputManager> inputManager_;    ///< Keyboard/mouse input handler
@@ -153,6 +180,16 @@ namespace vkeng {
         std::shared_ptr<MemoryManager> memoryManager_;  ///< VMA-based memory allocator
         std::unique_ptr<VulkanSwapChain> swapChain_;    ///< Swapchain for presentation
         std::shared_ptr<Texture> fallbackTexture_;      ///< 1x1 white fallback for unbound texture slots
+        std::shared_ptr<Texture> fallbackNormalTexture_;  ///< 1x1 flat normal (128,128,255,255) for normal map slots
+        std::shared_ptr<Texture> fallbackMRTexture_;      ///< 1x1 default metallic-roughness (0, roughness=0.5) for MR slots
+
+        // ============================================================================
+        // Game Engine Subsystems - Available to derived classes
+        // ============================================================================
+
+        std::unique_ptr<PhysicsWorld> physicsWorld_;    ///< Physics simulation
+        std::unique_ptr<AudioEngine> audioEngine_;      ///< Audio playback and spatial sound
+        SceneNode* m_sceneRoot = nullptr;               ///< Non-owning pointer to the scene root
 
     private:
         /**

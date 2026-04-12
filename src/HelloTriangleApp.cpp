@@ -92,7 +92,7 @@ std::filesystem::path resolveAssetBasePath(const std::string& configuredPath) {
 } // namespace
 
 // Helper function declarations
-void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout, VkDescriptorSetLayout textureSetLayout);
+void createUboSetLayout(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout);
 void createDescriptorPool(VkDevice device, uint32_t frameCount, VkDescriptorPool* descriptorPool);
 void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool descriptorPool,
                           VkDescriptorSetLayout descriptorSetLayout, const std::vector<std::shared_ptr<Buffer>>& uniformBuffers,
@@ -115,20 +115,17 @@ void HelloTriangleApp::onShutdown() {
     materialDescriptorPool_.reset();
     textureSetLayout_.reset();
 
-    if (pipelineLayout_ != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device_->getDevice(), pipelineLayout_, nullptr);
-    }
+    renderer_.reset();
+    shadowPass_.reset();
+    pipelineManager_.reset();
+    shadowSetLayout_.reset();
+
     if (descriptorPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(device_->getDevice(), descriptorPool_, nullptr);
     }
     if (descriptorSetLayout_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(device_->getDevice(), descriptorSetLayout_, nullptr);
     }
-
-    // Renderer, Pipeline, RenderPass are unique_ptrs and will be destroyed automatically
-    // BUT we must ensure they are destroyed before the Device (which is in Base class).
-    // The order of destruction is: Derived members -> Base members.
-    // So renderer_, pipeline_, renderPass_ will be destroyed before device_. Correct.
 }
 
 void HelloTriangleApp::onInit() {
@@ -140,21 +137,34 @@ void HelloTriangleApp::initRenderingPipeline() {
     // 1. Create RenderPass
     renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
-    // 2. Create texture descriptor set layout (set 1) and material descriptor pool
-    textureSetLayout_ = DescriptorManager::get().createTextureLayout(1, VK_SHADER_STAGE_FRAGMENT_BIT);
+    // 2. Create PBR texture descriptor set layout (set 1, bindings 0-4) and material descriptor pool
+    textureSetLayout_ = DescriptorManager::get().createCombinedLayout({
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // baseColor
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // normal
+        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // metallicRoughness
+        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // occlusion
+        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // emissive
+    });
     materialDescriptorPool_ = DescriptorManager::get().createPool(32);
 
-    // 3. Create Layouts (UBO set 0 + texture set 1)
-    createLayouts(device_->getDevice(), &descriptorSetLayout_, &pipelineLayout_, textureSetLayout_->getHandle());
+    // 3. Create shadow map descriptor set layout (set 2) — one comparison sampler
+    shadowSetLayout_ = DescriptorManager::get().createCombinedLayout({
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+    });
 
-    // 3. Create Pipeline
-    const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
-    const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
-    pipelineCache_.emplace(device_->getDevice(), "pipeline.cache");
-    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, swapChain_->extent(), vertPath, fragPath,
-        pipelineCache_->get());
+    // 4. Create UBO descriptor set layout (set 0) and PipelineManager (with shadow set layout)
+    createUboSetLayout(device_->getDevice(), &descriptorSetLayout_);
+    pipelineManager_ = std::make_unique<PipelineManager>(device_->getDevice(), descriptorSetLayout_, textureSetLayout_->getHandle(), shadowSetLayout_->getHandle());
 
-    // 4. Create Mesh and UBOs (This is part of the "Scene" really, but tied to the pipeline setup)
+    // 4. Configure default pipeline
+    defaultPipelineConfig_.vertShaderPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
+    defaultPipelineConfig_.fragShaderPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
+    defaultPipelineConfig_.blendMode = BlendMode::Opaque;
+    defaultPipelineConfig_.cullMode = CullMode::Back;
+    defaultPipelineConfig_.depthWriteEnable = true;
+    defaultPipelineConfig_.depthTestEnable = true;
+
+    // 5. Create Mesh and UBOs
     const std::vector<Vertex> vertices = {
         {{-0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
         {{0.5f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
@@ -174,10 +184,10 @@ void HelloTriangleApp::initRenderingPipeline() {
     createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
     createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
 
-    // 5. Create Renderer
-    renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, pipeline_);
+    // 6. Create Renderer
+    renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, *pipelineManager_, defaultPipelineConfig_);
 
-    // 6. Create fallback texture descriptor set
+    // 7. Create fallback texture descriptor set (all 5 PBR slots filled with identity textures)
     {
         auto setResult = materialDescriptorPool_->allocateDescriptorSet(textureSetLayout_);
         if (!setResult) throw std::runtime_error("Failed to allocate fallback texture descriptor set");
@@ -185,14 +195,45 @@ void HelloTriangleApp::initRenderingPipeline() {
 
         DescriptorSet fallbackDescSet(device_->getDevice(), fallbackTextureDescriptorSet_, textureSetLayout_);
         fallbackDescSet.writeImage(0, fallbackTexture_->getImage(), fallbackTexture_->getSampler());
+        fallbackDescSet.writeImage(1, fallbackNormalTexture_->getImage(), fallbackNormalTexture_->getSampler());
+        fallbackDescSet.writeImage(2, fallbackMRTexture_->getImage(), fallbackMRTexture_->getSampler());
+        fallbackDescSet.writeImage(3, fallbackTexture_->getImage(), fallbackTexture_->getSampler());
+        fallbackDescSet.writeImage(4, fallbackTexture_->getImage(), fallbackTexture_->getSampler());
         fallbackDescSet.update();
     }
     renderer_->setFallbackTextureDescriptorSet(fallbackTextureDescriptorSet_);
 
-    // 7. Set Callback
+    // 8. Set Callback
     renderer_->setRecreateCallback([this](uint32_t width, uint32_t height) {
         recreateResources(width, height);
     });
+
+    // 9. Shadow mapping setup
+    shadowPass_ = std::make_unique<ShadowPass>(device_->getDevice(), device_->getPhysicalDevice(), memoryManager_);
+
+    // Allocate shadow descriptor set from the material pool and write shadow map image
+    {
+        auto setResult = materialDescriptorPool_->allocateDescriptorSet(shadowSetLayout_);
+        if (!setResult) throw std::runtime_error("Failed to allocate shadow descriptor set");
+        shadowDescriptorSet_ = setResult.getValue();
+
+        DescriptorSet shadowDescSet(device_->getDevice(), shadowDescriptorSet_, shadowSetLayout_);
+        shadowDescSet.writeImage(0, shadowPass_->getDepthImage(), shadowPass_->getSampler(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+        shadowDescSet.update();
+    }
+
+    // Configure shadow pipeline: depth-only, front-face cull (reduces peter-panning)
+    shadowPipelineConfig_.vertShaderPath = resolveShaderPath("", "shadow_vert.spv");
+    shadowPipelineConfig_.fragShaderPath = resolveShaderPath("", "shadow_frag.spv");
+    shadowPipelineConfig_.blendMode = BlendMode::Opaque;
+    shadowPipelineConfig_.cullMode = CullMode::Front;
+    shadowPipelineConfig_.depthWriteEnable = true;
+    shadowPipelineConfig_.depthTestEnable = true;
+    shadowPipelineConfig_.depthOnly = true;
+
+    renderer_->setShadowPass(shadowPass_.get());
+    renderer_->setShadowDescriptorSet(shadowDescriptorSet_);
+    renderer_->setShadowPipelineConfig(shadowPipelineConfig_);
 }
 
 void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
@@ -201,20 +242,15 @@ void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
     // 1. Recreate RenderPass
     renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
 
-    // 2. Recreate Pipeline (pipelineCache_ is intentionally NOT recreated — same cache survives resize)
-    const auto vertPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
-    const auto fragPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
-    pipeline_ = std::make_shared<Pipeline>(device_->getDevice(), renderPass_->get(), pipelineLayout_, VkExtent2D{width, height}, vertPath, fragPath,
-        pipelineCache_->get());
+    // 2. Invalidate cached pipelines (render pass changed, but PipelineCache on disk survives)
+    pipelineManager_->invalidateAll();
 
     // 3. Recreate Uniform Buffers and Descriptors (in case image count changed)
-    // Cleanup old resources
     if (descriptorPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(device_->getDevice(), descriptorPool_, nullptr);
     }
     uniformBuffers_.clear();
 
-    // Recreate
     uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
     for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
         auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
@@ -227,7 +263,6 @@ void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
 
     // 4. Update Renderer
     renderer_->setRenderPass(renderPass_);
-    renderer_->setPipeline(pipeline_);
 }
 
 void HelloTriangleApp::initScene() {
@@ -248,7 +283,8 @@ void HelloTriangleApp::initScene() {
         LOG_WARN(GENERAL, "Failed to load test texture, using fallback white");
     }
 
-    defaultMaterial_->createDescriptorSet(device_->getDevice(), materialDescriptorPool_, textureSetLayout_, fallbackTexture_);
+    Material::FallbackTextures fallbacks{fallbackTexture_, fallbackNormalTexture_, fallbackMRTexture_};
+    defaultMaterial_->createDescriptorSet(device_->getDevice(), materialDescriptorPool_, textureSetLayout_, fallbacks);
 
     // --- Create meshes ---
     auto squareMesh = PrimitiveFactory::createQuad(memoryManager_);
@@ -366,8 +402,7 @@ void HelloTriangleApp::onRender() {
 }
 
 // --- Helper Implementations ---
-void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, VkPipelineLayout* pipelineLayout, VkDescriptorSetLayout textureSetLayout) {
-    // --- Create Descriptor Set Layout ---
+void createUboSetLayout(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout) {
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -381,24 +416,6 @@ void createLayouts(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout, 
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create descriptor set layout!");
-    }
-
-    // --- Create Pipeline Layout ---
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(MeshPushConstants);
-
-    VkDescriptorSetLayout setLayouts[] = { *descriptorSetLayout, textureSetLayout };
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 2;
-    pipelineLayoutInfo.pSetLayouts = setLayouts;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, pipelineLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create pipeline layout!");
     }
 }
 

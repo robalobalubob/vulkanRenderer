@@ -79,10 +79,17 @@ public:
     bool hasAnyTexture() const;
 
     VkDescriptorSet getDescriptorSet() const { return m_descriptorSet; }
+
+    struct FallbackTextures {
+        std::shared_ptr<Texture> white;            ///< 1x1 white (identity for base color, occlusion, emissive)
+        std::shared_ptr<Texture> flatNormal;       ///< 1x1 (128,128,255) flat normal map
+        std::shared_ptr<Texture> metallicRoughness; ///< 1x1 default metallic-roughness
+    };
+
     void createDescriptorSet(VkDevice device,
                              std::shared_ptr<DescriptorPool> pool,
                              std::shared_ptr<DescriptorSetLayout> layout,
-                             std::shared_ptr<Texture> fallbackTexture);
+                             const FallbackTextures& fallbacks);
 
 private:
     MaterialFactors m_factors;

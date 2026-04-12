@@ -1,5 +1,6 @@
 #include "vulkan-engine/core/Engine.hpp"
 #include "vulkan-engine/core/GlfwWindow.hpp"
+#include "vulkan-engine/core/Time.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -11,8 +12,11 @@ namespace vkeng {
 
     Engine::Engine(const Config& config) : config_(config) {
         inputManager_ = std::make_unique<InputManager>();
+        physicsWorld_ = std::make_unique<PhysicsWorld>();
+        audioEngine_ = std::make_unique<AudioEngine>();
         initWindow();
         initVulkanCore();
+        audioEngine_->initialize();
     }
 
     Engine::~Engine() {
@@ -28,8 +32,13 @@ namespace vkeng {
         // So App resources (Renderer, Pipeline) will be destroyed before Device/Instance.
         // This is correct.
 
+        audioEngine_.reset();
+        physicsWorld_.reset();
+
         swapChain_.reset();
         fallbackTexture_.reset();
+        fallbackNormalTexture_.reset();
+        fallbackMRTexture_.reset();
         DescriptorManager::get().cleanup();
         memoryManager_.reset(); // Shared ptr, but we release our hold
         
@@ -105,33 +114,83 @@ namespace vkeng {
                 "__fallback_white", device_->getDevice(), imageResult.getValue());
         }
 
+        // Create 1x1 flat normal fallback (tangent-space neutral normal = (0.5, 0.5, 1.0))
+        {
+            uint32_t normalPixel = 0xFFFF8080; // RGBA: R=128, G=128, B=255, A=255 (little-endian)
+            auto imageResult = memoryManager_->createImage(
+                1, 1, VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+            if (!imageResult) throw std::runtime_error("Failed to create fallback normal texture image");
+
+            auto uploadResult = memoryManager_->uploadToImage(
+                imageResult.getValue(), &normalPixel, sizeof(normalPixel), 1, 1);
+            if (!uploadResult) throw std::runtime_error("Failed to upload fallback normal texture data");
+
+            fallbackNormalTexture_ = std::make_shared<Texture>(
+                "__fallback_normal", device_->getDevice(), imageResult.getValue());
+        }
+
+        // Create 1x1 default metallic-roughness fallback (metallic=0, roughness=1.0)
+        // glTF packs: G=roughness, B=metallic
+        {
+            uint32_t mrPixel = 0xFF00FF00; // RGBA: R=0, G=255(roughness=1), B=0(metallic=0), A=255 (little-endian)
+            auto imageResult = memoryManager_->createImage(
+                1, 1, VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+            if (!imageResult) throw std::runtime_error("Failed to create fallback MR texture image");
+
+            auto uploadResult = memoryManager_->uploadToImage(
+                imageResult.getValue(), &mrPixel, sizeof(mrPixel), 1, 1);
+            if (!uploadResult) throw std::runtime_error("Failed to upload fallback MR texture data");
+
+            fallbackMRTexture_ = std::make_shared<Texture>(
+                "__fallback_metallic_roughness", device_->getDevice(), imageResult.getValue());
+        }
+
         // 5. SwapChain
         int width, height;
         window_->getFramebufferSize(width, height);
         swapChain_ = std::make_unique<VulkanSwapChain>(device_->getDevice(), device_->getPhysicalDevice(), surface_, width, height, memoryManager_);
     }
 
+    void Engine::onFixedUpdate(float fixedDeltaTime) {
+        // Default: step the physics world if a scene root has been set
+        if (m_sceneRoot) {
+            physicsWorld_->step(fixedDeltaTime, m_sceneRoot);
+        }
+    }
+
     void Engine::run() {
         onInit(); // Allow derived class to initialize its specific resources
 
-        float lastTime = static_cast<float>(glfwGetTime());
+        auto& time = Time::get();
+
         while (!window_->shouldClose()) {
             window_->pollEvents();
 
-            float currentTime = static_cast<float>(glfwGetTime());
-            float deltaTime = currentTime - lastTime;
-            lastTime = currentTime;
+            // Advance the engine clock
+            time.tick();
+            float dt = time.deltaTime();
 
-            // Clamp deltaTime to prevent camera/physics explosions from frame spikes
-            // (window resize, tab switch, debugger attach, etc.)
-            deltaTime = std::min(deltaTime, 0.1f);
+            // Fixed-rate updates (physics, deterministic game logic)
+            while (time.consumeFixedStep()) {
+                onFixedUpdate(time.fixedDeltaTime());
+            }
 
-            onUpdate(deltaTime);
+            // Variable-rate update (input, camera, animation, game logic)
+            onUpdate(dt);
+
+            // Update spatial audio positions
+            if (m_sceneRoot) {
+                audioEngine_->update(m_sceneRoot);
+            }
+
+            // Render
             onRender();
 
             inputManager_->endFrame();
         }
-        
+
         onShutdown();
     }
 

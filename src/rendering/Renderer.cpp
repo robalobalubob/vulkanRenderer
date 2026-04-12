@@ -20,8 +20,10 @@
 #include "vulkan-engine/core/Logger.hpp"
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <stdexcept>
 #include <algorithm>
+#include <array>
 
 namespace vkeng {
 
@@ -29,9 +31,11 @@ namespace vkeng {
 // Constructor and Destructor
 // ============================================================================
 
-Renderer::Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapChain, 
-                   std::shared_ptr<RenderPass> renderPass, std::shared_ptr<Pipeline> pipeline)
-    : m_window(window), m_device(device), m_swapChain(swapChain), m_renderPass(renderPass), m_pipeline(pipeline) {
+Renderer::Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapChain,
+                   std::shared_ptr<RenderPass> renderPass, PipelineManager& pipelineManager,
+                   const PipelineConfig& defaultConfig)
+    : m_window(window), m_device(device), m_swapChain(swapChain), m_renderPass(renderPass),
+      m_pipelineManager(pipelineManager), m_defaultConfig(defaultConfig) {
 
     // Create command pool for allocating command buffers
     m_commandPool = std::make_unique<CommandPool>(m_device.getDevice(), m_device.getGraphicsFamily());
@@ -193,8 +197,10 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     m_collectedLights.clear();
     collectLights(rootNode, m_collectedLights);
 
+    // Compute light-space matrix from first directional light
+    m_lightSpaceMatrix = computeLightSpaceMatrix(rootNode);
+
     // Use m_currentFrame (not imageIndex) for per-frame resources.
-    // imageIndex is only used for selecting the framebuffer.
     updateGlobalUbo(m_currentFrame, camera, uniformBuffers);
 
     // Extract frustum planes once per frame for culling during scene traversal
@@ -202,13 +208,29 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     m_drawnCount = 0;
     m_culledCount = 0;
 
+    // Collect draw calls from scene graph (deferred rendering)
+    m_opaqueDrawCalls.clear();
+    m_transparentDrawCalls.clear();
+    collectDrawCalls(rootNode, camera.getPosition());
+
+    // Sort transparent draw calls back-to-front
+    std::sort(m_transparentDrawCalls.begin(), m_transparentDrawCalls.end(),
+        [](const DrawCall& a, const DrawCall& b) {
+            return a.distanceToCamera > b.distanceToCamera;
+        });
+
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
         throw std::runtime_error("failed to begin recording command buffer!");
     }
 
-    // Cache extent for consistent usage throughout this frame
+    // ---- Pass 1: Shadow pass (depth-only) ----
+    if (m_shadowPass) {
+        recordShadowPass(commandBuffer, descriptorSets[m_currentFrame]);
+    }
+
+    // ---- Pass 2: Main render pass ----
     VkExtent2D extent = m_swapChain.extent();
 
     VkRenderPassBeginInfo renderPassInfo{};
@@ -217,7 +239,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     renderPassInfo.framebuffer = m_swapChainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = extent;
-    
+
     std::array<VkClearValue, 2> clearValues{};
     clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
     clearValues[1].depthStencil = {1.0f, 0};
@@ -226,9 +248,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     renderPassInfo.pClearValues = clearValues.data();
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getPipeline());
 
-    // Set dynamic viewport and scissor using cached extent
+    // Set dynamic viewport and scissor
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -243,8 +264,17 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->getLayout(), 0, 1, &descriptorSets[m_currentFrame], 0, nullptr);
-    renderNode(commandBuffer, rootNode);
+    // Bind global UBO descriptor set (set 0)
+    VkPipelineLayout layout = m_pipelineManager.getLayout();
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &descriptorSets[m_currentFrame], 0, nullptr);
+
+    // Bind shadow map descriptor set (set 2) if available
+    if (m_shadowPass && m_shadowDescriptorSet != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 2, 1, &m_shadowDescriptorSet, 0, nullptr);
+    }
+
+    // Issue draw calls with correct pipeline binding
+    issueDrawCalls(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -257,9 +287,11 @@ void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
     GlobalUbo ubo{};
     ubo.view = camera.getViewMatrix();
     ubo.proj = camera.getProjectionMatrix();
+    ubo.lightSpaceMatrix = m_lightSpaceMatrix;
     ubo.cameraPosition = glm::vec4(camera.getPosition(), 1.0f);
     ubo.ambientColor = glm::vec4(0.14f, 0.14f, 0.16f, 1.0f);
-    ubo.debugView = glm::vec4(static_cast<float>(m_debugShadingMode), 0.0f, 0.0f, 0.0f);
+    float shadowsEnabled = (m_shadowPass != nullptr) ? 1.0f : 0.0f;
+    ubo.debugView = glm::vec4(static_cast<float>(m_debugShadingMode), shadowsEnabled, 0.0f, 0.0f);
 
     // Collect lights from the scene graph into the UBO
     ubo.lightCount = static_cast<uint32_t>(m_collectedLights.size());
@@ -272,25 +304,20 @@ void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
 
 // --- Private Methods ---
 
-void Renderer::renderNode(VkCommandBuffer commandBuffer, const SceneNode& node) {
-    if (!node.isActive()) {
-        return;
-    }
+void Renderer::collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPos) {
+    if (!node.isActive()) return;
 
     auto meshRenderer = node.getComponent<MeshRenderer>();
     if (meshRenderer) {
         auto mesh = meshRenderer->getMesh();
         if (mesh) {
+            const glm::mat4& worldMatrix = node.getWorldMatrix();
+
             // Frustum culling: test bounding sphere against camera frustum
             if (m_cullingEnabled) {
-                const glm::mat4& worldMatrix = node.getWorldMatrix();
-
-                // Transform bounding sphere center to world space
                 glm::vec3 worldCenter = glm::vec3(
                     worldMatrix * glm::vec4(mesh->getBoundsCenter(), 1.0f));
 
-                // Scale radius by the max axis scale (conservative for non-uniform scale).
-                // Column lengths of the 3x3 portion give per-axis scale factors.
                 float maxScale = std::max({
                     glm::length(glm::vec3(worldMatrix[0])),
                     glm::length(glm::vec3(worldMatrix[1])),
@@ -300,55 +327,116 @@ void Renderer::renderNode(VkCommandBuffer commandBuffer, const SceneNode& node) 
 
                 if (!m_frustum.intersectsSphere(worldCenter, worldRadius)) {
                     m_culledCount++;
-                    // Still recurse into children — parent mesh being off-screen
-                    // doesn't imply children are (no aggregate bounding volumes).
+                    // Still recurse into children (no aggregate bounding volumes yet)
                     for (const auto& child : node.getChildren()) {
-                        renderNode(commandBuffer, *child);
+                        collectDrawCalls(*child, cameraPos);
                     }
                     return;
                 }
             }
             m_drawnCount++;
 
-            MeshPushConstants pushConstants{};
-            pushConstants.modelMatrix = node.getWorldMatrix();
-
-            // Determine which texture descriptor set to bind
-            VkDescriptorSet textureSet = m_fallbackTextureDescriptorSet;
+            DrawCall dc{};
+            dc.mesh = mesh;
+            dc.pushConstants.modelMatrix = worldMatrix;
+            dc.textureDescriptorSet = m_fallbackTextureDescriptorSet;
+            dc.blendMode = BlendMode::Opaque;
+            dc.cullMode = CullMode::Back;
 
             if (auto material = meshRenderer->getMaterial()) {
                 const auto& factors = material->getFactors();
-                pushConstants.baseColorFactor = factors.baseColorFactor;
-                pushConstants.emissiveFactor = glm::vec4(factors.emissiveFactor, 0.0f);
-                pushConstants.specularColorAndShininess = glm::vec4(factors.specularColor, factors.shininess);
+                dc.pushConstants.baseColorFactor = factors.baseColorFactor;
+                float alphaCutoff = (material->getAlphaMode() == AlphaMode::Mask) ? factors.alphaCutoff : 0.0f;
+                dc.pushConstants.emissiveFactor = glm::vec4(factors.emissiveFactor, alphaCutoff);
+                dc.pushConstants.specularColorAndShininess = glm::vec4(factors.specularColor, factors.shininess);
+                dc.pushConstants.pbrFactors = glm::vec4(factors.metallicFactor, factors.roughnessFactor, factors.normalScale, factors.occlusionStrength);
 
                 if (material->getDescriptorSet() != VK_NULL_HANDLE) {
-                    textureSet = material->getDescriptorSet();
+                    dc.textureDescriptorSet = material->getDescriptorSet();
+                }
+
+                // Determine pipeline variant from material alpha mode
+                switch (material->getAlphaMode()) {
+                    case AlphaMode::Opaque:
+                        dc.blendMode = BlendMode::Opaque;
+                        break;
+                    case AlphaMode::Mask:
+                        dc.blendMode = BlendMode::AlphaMask;
+                        break;
+                    case AlphaMode::Blend:
+                        dc.blendMode = BlendMode::AlphaBlend;
+                        break;
+                }
+
+                if (factors.doubleSided) {
+                    dc.cullMode = CullMode::None;
                 }
             }
 
-            vkCmdPushConstants(
-                commandBuffer,
-                m_pipeline->getLayout(),
-                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                0,
-                sizeof(MeshPushConstants),
-                &pushConstants);
+            // Compute distance to camera for transparent sorting
+            glm::vec3 meshWorldPos = glm::vec3(worldMatrix[3]);
+            dc.distanceToCamera = glm::length(meshWorldPos - cameraPos);
 
-            // Bind per-material texture descriptor set at set 1
-            if (textureSet != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_pipeline->getLayout(), 1, 1, &textureSet, 0, nullptr);
+            if (dc.blendMode == BlendMode::AlphaBlend) {
+                m_transparentDrawCalls.push_back(std::move(dc));
+            } else {
+                m_opaqueDrawCalls.push_back(std::move(dc));
             }
-
-            mesh->bind(commandBuffer);
-            vkCmdDrawIndexed(commandBuffer, mesh->getIndexCount(), 1, 0, 0, 0);
         }
     }
 
     for (const auto& child : node.getChildren()) {
-        renderNode(commandBuffer, *child);
+        collectDrawCalls(*child, cameraPos);
     }
+}
+
+void Renderer::issueDrawCalls(VkCommandBuffer commandBuffer) {
+    VkExtent2D extent = m_swapChain.extent();
+    VkPipelineLayout layout = m_pipelineManager.getLayout();
+    VkPipeline lastBoundPipeline = VK_NULL_HANDLE;
+
+    auto issueBatch = [&](const std::vector<DrawCall>& drawCalls) {
+        for (const auto& dc : drawCalls) {
+            // Determine the pipeline config for this draw call
+            PipelineConfig config = m_defaultConfig;
+            config.blendMode = dc.blendMode;
+            config.cullMode = dc.cullMode;
+            // Transparent objects: read depth but don't write (allows correct layering)
+            if (dc.blendMode == BlendMode::AlphaBlend) {
+                config.depthWriteEnable = false;
+            }
+
+            auto pipeline = m_pipelineManager.getPipeline(config, m_renderPass->get(), extent);
+            VkPipeline vkPipeline = pipeline->getPipeline();
+
+            // Only rebind pipeline if it changed
+            if (vkPipeline != lastBoundPipeline) {
+                vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline);
+                lastBoundPipeline = vkPipeline;
+            }
+
+            vkCmdPushConstants(commandBuffer, layout,
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0, sizeof(MeshPushConstants), &dc.pushConstants);
+
+            if (dc.textureDescriptorSet != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    layout, 1, 1, &dc.textureDescriptorSet, 0, nullptr);
+            }
+
+            dc.mesh->bind(commandBuffer);
+            vkCmdDrawIndexed(commandBuffer, dc.mesh->getIndexCount(), 1, 0, 0, 0);
+        }
+    };
+
+    // Draw opaque objects first, then transparent (back-to-front, already sorted)
+    issueBatch(m_opaqueDrawCalls);
+    issueBatch(m_transparentDrawCalls);
+}
+
+// Legacy renderNode for backward compatibility (delegates to collectDrawCalls)
+void Renderer::renderNode(VkCommandBuffer /*commandBuffer*/, const SceneNode& /*node*/) {
+    // No longer used — draw calls are collected via collectDrawCalls() and issued via issueDrawCalls()
 }
 
 
@@ -477,6 +565,112 @@ void Renderer::recreateSwapChain(Camera& camera) {
 
     // Re-create framebuffers
     createFramebuffers();
+}
+
+// ============================================================================
+// Shadow Mapping
+// ============================================================================
+
+glm::mat4 Renderer::computeLightSpaceMatrix(const SceneNode& root) const {
+    // Find the first directional light in the scene
+    glm::vec3 lightDir(0.0f, -1.0f, 0.0f); // Default: straight down
+    bool found = false;
+
+    std::function<void(const SceneNode&)> findDirLight = [&](const SceneNode& node) {
+        if (found || !node.isActive()) return;
+        auto light = node.getComponent<Light>();
+        if (light && light->isEnabled() && light->getType() == LightType::Directional) {
+            glm::quat worldRot = node.getWorldRotation();
+            lightDir = glm::normalize(worldRot * glm::vec3(0.0f, 0.0f, -1.0f));
+            found = true;
+            return;
+        }
+        for (const auto& child : node.getChildren()) {
+            findDirLight(*child);
+        }
+    };
+    findDirLight(root);
+
+    // Orthographic projection from light direction
+    // Scene-fitting: use a fixed bounding box for now (covers typical scenes)
+    constexpr float orthoSize = 20.0f;
+    constexpr float nearPlane = -30.0f;
+    constexpr float farPlane  =  30.0f;
+
+    glm::mat4 lightView = glm::lookAt(
+        -lightDir * 15.0f,   // Eye: offset along opposite of light direction
+        glm::vec3(0.0f),     // Center: scene origin
+        glm::vec3(0.0f, 1.0f, 0.0f)
+    );
+
+    // Handle degenerate case: light pointing straight down/up
+    if (std::abs(glm::dot(lightDir, glm::vec3(0.0f, 1.0f, 0.0f))) > 0.99f) {
+        lightView = glm::lookAt(
+            -lightDir * 15.0f,
+            glm::vec3(0.0f),
+            glm::vec3(0.0f, 0.0f, 1.0f)
+        );
+    }
+
+    glm::mat4 lightProj = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, nearPlane, farPlane);
+
+    return lightProj * lightView;
+}
+
+void Renderer::recordShadowPass(VkCommandBuffer commandBuffer, VkDescriptorSet uboDescriptorSet) {
+    VkExtent2D shadowExtent = m_shadowPass->getExtent();
+
+    VkRenderPassBeginInfo rpInfo{};
+    rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpInfo.renderPass = m_shadowPass->getRenderPass();
+    rpInfo.framebuffer = m_shadowPass->getFramebuffer();
+    rpInfo.renderArea.offset = {0, 0};
+    rpInfo.renderArea.extent = shadowExtent;
+
+    VkClearValue depthClear{};
+    depthClear.depthStencil = {1.0f, 0};
+    rpInfo.clearValueCount = 1;
+    rpInfo.pClearValues = &depthClear;
+
+    vkCmdBeginRenderPass(commandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // Set viewport and scissor to shadow map dimensions
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(shadowExtent.width);
+    viewport.height = static_cast<float>(shadowExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = shadowExtent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Get shadow pipeline (depth-only, front-face culling to reduce peter-panning)
+    auto shadowPipeline = m_pipelineManager.getPipeline(
+        m_shadowConfig, m_shadowPass->getRenderPass(), shadowExtent);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline->getPipeline());
+
+    VkPipelineLayout layout = m_pipelineManager.getLayout();
+
+    // Bind UBO descriptor set (set 0) — shadow.vert reads lightSpaceMatrix from here
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        layout, 0, 1, &uboDescriptorSet, 0, nullptr);
+
+    // Issue opaque draw calls only (transparent objects don't cast shadows)
+    for (const auto& dc : m_opaqueDrawCalls) {
+        vkCmdPushConstants(commandBuffer, layout,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(MeshPushConstants), &dc.pushConstants);
+
+        dc.mesh->bind(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, dc.mesh->getIndexCount(), 1, 0, 0, 0);
+    }
+
+    vkCmdEndRenderPass(commandBuffer);
 }
 
 } // namespace vkeng

@@ -47,9 +47,10 @@ namespace vkeng {
     struct GlobalUbo {
         alignas(16) glm::mat4 view;             ///< View matrix (world to camera space)
         alignas(16) glm::mat4 proj;             ///< Projection matrix (camera to clip space)
+        alignas(16) glm::mat4 lightSpaceMatrix{1.f}; ///< Light-space VP matrix for shadow mapping
         alignas(16) glm::vec4 cameraPosition;   ///< Camera world position (xyz), w = padding
         alignas(16) glm::vec4 ambientColor;     ///< Ambient light color (rgb), a = padding
-        alignas(16) glm::vec4 debugView;        ///< x = DebugShadingMode, yzw reserved
+        alignas(16) glm::vec4 debugView;        ///< x = DebugShadingMode, y = shadowsEnabled (1.0 = on), zw reserved
         alignas(4)  uint32_t  lightCount = 0;   ///< Number of active lights (0..MAX_LIGHTS)
         alignas(4)  uint32_t  _pad0 = 0;        ///< Explicit padding for std140
         alignas(4)  uint32_t  _pad1 = 0;
@@ -62,12 +63,13 @@ namespace vkeng {
      * @brief Push constants for per-mesh transformation and material data
      *
      * @note Push constants are limited to 128 bytes (guaranteed minimum).
-     *       Current size: 112 bytes.
+     *       Current size: 128 bytes (fully utilized).
      */
     struct MeshPushConstants {
         alignas(16) glm::mat4 modelMatrix{1.f};                    ///< Model matrix (object to world space)
         alignas(16) glm::vec4 baseColorFactor{1.f, 1.f, 1.f, 1.f};///< Base color multiplier and alpha
-        alignas(16) glm::vec4 emissiveFactor{0.f, 0.f, 0.f, 0.f}; ///< Emissive color contribution
+        alignas(16) glm::vec4 emissiveFactor{0.f, 0.f, 0.f, 0.f}; ///< Emissive (rgb) + alphaCutoff (a)
         alignas(16) glm::vec4 specularColorAndShininess{0.35f, 0.35f, 0.35f, 32.0f}; ///< Specular color (rgb) and shininess (a)
+        alignas(16) glm::vec4 pbrFactors{0.0f, 1.0f, 1.0f, 1.0f}; ///< metallic (x), roughness (y), normalScale (z), occlusionStrength (w)
     };
 }

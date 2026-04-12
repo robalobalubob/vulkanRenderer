@@ -56,11 +56,15 @@ endfunction()
 
 vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert" "${VKENG_SHADER_OUTPUT_DIR}/vert.spv")
 vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag" "${VKENG_SHADER_OUTPUT_DIR}/frag.spv")
+vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.vert" "${VKENG_SHADER_OUTPUT_DIR}/shadow_vert.spv")
+vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.frag" "${VKENG_SHADER_OUTPUT_DIR}/shadow_frag.spv")
 
 add_custom_target(compile_shaders
     DEPENDS
         "${VKENG_SHADER_OUTPUT_DIR}/vert.spv"
-        "${VKENG_SHADER_OUTPUT_DIR}/frag.spv")
+        "${VKENG_SHADER_OUTPUT_DIR}/frag.spv"
+        "${VKENG_SHADER_OUTPUT_DIR}/shadow_vert.spv"
+        "${VKENG_SHADER_OUTPUT_DIR}/shadow_frag.spv")
 
 file(GLOB_RECURSE VKENG_ASSET_SOURCES
     CONFIGURE_DEPENDS
@@ -88,30 +92,47 @@ add_custom_target(prepare_runtime_content
 # ============================================================================
 
 add_library(vulkan-engine STATIC
+    # Audio subsystem
+    src/audio/AudioEngine.cpp
+    src/audio/AudioListener.cpp
+    src/audio/AudioSource.cpp
+    # Components
     src/components/Light.cpp
     src/components/MeshRenderer.cpp
-    src/core/InputManager.cpp
-    src/core/GlfwWindow.cpp
-    src/core/Engine.cpp
-    src/core/Logger.cpp
-    src/core/VulkanInstance.cpp
-    src/core/VulkanDevice.cpp
-    src/core/VulkanSwapChain.cpp
-    src/core/Result.cpp
-    src/core/VmaImplementation.cpp
-    src/core/MemoryManager.cpp
+    # Core
     src/core/Buffer.cpp
+    src/core/Engine.cpp
+    src/core/EventSystem.cpp
+    src/core/GlfwWindow.cpp
+    src/core/InputManager.cpp
+    src/core/Logger.cpp
+    src/core/MemoryManager.cpp
+    src/core/Result.cpp
+    src/core/Time.cpp
+    src/core/VmaImplementation.cpp
+    src/core/VulkanDevice.cpp
+    src/core/VulkanInstance.cpp
+    src/core/VulkanSwapChain.cpp
+    # Math
     src/math/Transform.cpp
+    # Physics subsystem
+    src/physics/Collider.cpp
+    src/physics/PhysicsWorld.cpp
+    src/physics/RigidBody.cpp
+    # Rendering
     src/rendering/Camera.cpp
+    src/rendering/CommandBuffer.cpp
+    src/rendering/CommandPool.cpp
+    src/rendering/DescriptorSet.cpp
     src/rendering/FirstPersonCameraController.cpp
     src/rendering/OrbitCameraController.cpp
-    src/rendering/RenderPass.cpp
     src/rendering/Pipeline.cpp
+    src/rendering/PipelineManager.cpp
+    src/rendering/RenderPass.cpp
     src/rendering/Renderer.cpp
-    src/rendering/CommandPool.cpp
-    src/rendering/CommandBuffer.cpp
-    src/rendering/DescriptorSet.cpp
+    src/rendering/ShadowPass.cpp
     src/rendering/Vertex.cpp
+    # Resources
     src/resources/Material.cpp
     src/resources/Mesh.cpp
     src/resources/MeshLoader.cpp
@@ -119,7 +140,9 @@ add_library(vulkan-engine STATIC
     src/resources/ResourceManager.cpp
     src/resources/Texture.cpp
     src/resources/TextureLoader.cpp
+    # Scene
     src/scene/SceneNode.cpp
+    src/scene/SceneSerializer.cpp
 )
 
 target_include_directories(vulkan-engine

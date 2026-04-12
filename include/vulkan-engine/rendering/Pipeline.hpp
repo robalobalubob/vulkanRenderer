@@ -21,6 +21,51 @@
 
 namespace vkeng {
 
+    // ============================================================================
+    // Pipeline Configuration
+    // ============================================================================
+
+    /** @brief Blend mode for the pipeline's color attachment. */
+    enum class BlendMode {
+        Opaque,     ///< No blending, alpha ignored
+        AlphaBlend, ///< Standard src-alpha, one-minus-src-alpha blending
+        AlphaMask   ///< Opaque pipeline, but shader discards fragments below alpha cutoff
+    };
+
+    /** @brief Face culling mode. */
+    enum class CullMode {
+        None,       ///< No culling (double-sided)
+        Back,       ///< Cull back faces (default)
+        Front       ///< Cull front faces (used for shadow depth bias)
+    };
+
+    /**
+     * @struct PipelineConfig
+     * @brief Describes a pipeline variant for PipelineManager lookup/creation
+     *
+     * All fields that affect Vulkan pipeline state belong here. Two configs
+     * that compare equal produce the same VkPipeline.
+     */
+    struct PipelineConfig {
+        std::filesystem::path vertShaderPath;
+        std::filesystem::path fragShaderPath;
+        BlendMode blendMode = BlendMode::Opaque;
+        CullMode cullMode = CullMode::Back;
+        bool depthWriteEnable = true;
+        bool depthTestEnable = true;
+        bool depthOnly = false;       ///< True for depth-only passes (no color attachments)
+
+        bool operator==(const PipelineConfig& other) const {
+            return vertShaderPath == other.vertShaderPath
+                && fragShaderPath == other.fragShaderPath
+                && blendMode == other.blendMode
+                && cullMode == other.cullMode
+                && depthWriteEnable == other.depthWriteEnable
+                && depthTestEnable == other.depthTestEnable
+                && depthOnly == other.depthOnly;
+        }
+    };
+
     /**
      * @class PipelineCache
      * @brief RAII wrapper for VkPipelineCache with on-disk persistence.
@@ -106,6 +151,20 @@ namespace vkeng {
          * @note Shaders must be pre-compiled to SPIR-V format
          * @warning Pipeline must be recreated if render pass changes
          */
+        /**
+         * @brief Constructs graphics pipeline from shader file paths
+         * @param config Pipeline configuration (blend, cull, depth, shader paths)
+         */
+        explicit Pipeline(VkDevice device,
+            VkRenderPass renderPass,
+            VkPipelineLayout pipelineLayout,
+            VkExtent2D extent,
+            const PipelineConfig& config,
+            VkPipelineCache cache = VK_NULL_HANDLE);
+
+        /**
+         * @brief Constructs graphics pipeline from shader file paths (legacy convenience)
+         */
         explicit Pipeline(VkDevice device,
             VkRenderPass renderPass,
             VkPipelineLayout pipelineLayout,
@@ -136,6 +195,7 @@ namespace vkeng {
         Pipeline(Pipeline&& other) noexcept
             : device_(other.device_), pipeline_(other.pipeline_), layout_(other.layout_),
               renderPass_(other.renderPass_), extent_(other.extent_),
+              config_(std::move(other.config_)),
               vertPath_(std::move(other.vertPath_)), fragPath_(std::move(other.fragPath_)) {
             other.device_ = VK_NULL_HANDLE;
             other.pipeline_ = VK_NULL_HANDLE;
@@ -152,6 +212,7 @@ namespace vkeng {
                 layout_ = other.layout_;
                 renderPass_ = other.renderPass_;
                 extent_ = other.extent_;
+                config_ = std::move(other.config_);
                 vertPath_ = std::move(other.vertPath_);
                 fragPath_ = std::move(other.fragPath_);
                 other.device_ = VK_NULL_HANDLE;
@@ -212,7 +273,7 @@ namespace vkeng {
          * - Color blending (disabled)
          */
         void createGraphicsPipeline(VkShaderModule vertModule, VkShaderModule fragModule,
-                                     VkPipelineCache cache = VK_NULL_HANDLE);
+                                     VkPipelineCache cache, const PipelineConfig& config);
 
         // ============================================================================
         // Pipeline State
@@ -223,7 +284,8 @@ namespace vkeng {
         VkPipelineLayout layout_{VK_NULL_HANDLE};   ///< Resource binding layout
         VkRenderPass renderPass_{VK_NULL_HANDLE};   ///< Compatible render pass
         VkExtent2D extent_{};                       ///< Viewport dimensions
-        std::filesystem::path vertPath_;            ///< Vertex shader path
-        std::filesystem::path fragPath_;            ///< Fragment shader path
+        PipelineConfig config_;                     ///< Configuration used to create this pipeline
+        std::filesystem::path vertPath_;            ///< Vertex shader path (legacy, mirrors config_)
+        std::filesystem::path fragPath_;            ///< Fragment shader path (legacy, mirrors config_)
     };
 } // namespace vkeng
