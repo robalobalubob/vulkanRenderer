@@ -119,8 +119,8 @@ public:
      * 
      * @note Use convenience methods or macros instead of calling directly
      */
-    void log(LogLevel level, LogCategory category, const std::string& message, 
-             const char* file = __FILE__, int line = __LINE__, const char* func = __FUNCTION__);
+    void log(LogLevel level, LogCategory category, const std::string& message,
+             const char* file = nullptr, int line = 0, const char* func = nullptr);
     
     // ============================================================================
     // Convenience Logging Methods (Template-based)

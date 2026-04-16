@@ -150,6 +150,11 @@ target_include_directories(vulkan-engine
     PRIVATE third_party/include
 )
 
+target_compile_definitions(vulkan-engine
+    PUBLIC
+        GLM_ENABLE_EXPERIMENTAL
+)
+
 target_link_libraries(vulkan-engine
     PUBLIC
         Vulkan::Vulkan
