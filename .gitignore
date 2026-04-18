@@ -118,8 +118,9 @@ conan.lock
 conanbuildinfo.*
 conaninfo.txt
 
-# Vulkan validation layers
+# Vulkan validation layers (but not vcpkg manifest)
 *.json
+!vcpkg.json
 
 # Third party (keep source but ignore builds)
 third_party/*/build/
