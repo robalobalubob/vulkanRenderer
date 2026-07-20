@@ -49,8 +49,16 @@ layout(location = 6) in vec4 fragLightSpacePos;
 
 layout(location = 0) out vec4 outColor;
 
-vec3 applyGamma(vec3 linearColor) {
-    return pow(max(linearColor, vec3(0.0)), vec3(1.0 / 2.2));
+// ACES filmic tone mapping (Narkowicz fit). Maps HDR lighting to [0,1] with a
+// smooth highlight rolloff. Output stays linear: the sRGB swapchain applies
+// gamma encoding on write, so the shader must NOT gamma-correct manually.
+vec3 tonemapACES(vec3 x) {
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
 float calculateShadow(vec4 lightSpacePos, vec3 normal, vec3 lightDir) {
@@ -146,8 +154,8 @@ void main() {
     }
 
     if (ubo.debugView.x > 0.5) {
-        vec3 unlitColor = applyGamma(baseColor + emissive);
-        outColor = vec4(unlitColor, alpha);
+        // Unlit: raw linear color; swapchain sRGB encoding handles gamma
+        outColor = vec4(baseColor + emissive, alpha);
         return;
     }
 
@@ -236,5 +244,5 @@ void main() {
     // Add emissive (unaffected by lighting)
     lighting += emissive;
 
-    outColor = vec4(applyGamma(lighting), alpha);
+    outColor = vec4(tonemapACES(lighting), alpha);
 }

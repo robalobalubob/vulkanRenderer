@@ -271,6 +271,11 @@ void HelloTriangleApp::initScene() {
 
     // --- Create default material with descriptor set ---
     defaultMaterial_ = std::make_shared<Material>("default_material");
+    // Dielectric-strength specular; the built-in 0.35 gray washes surfaces
+    // white at grazing angles once the broad roughness-1 lobe kicks in
+    defaultMaterial_->setSpecularColor({0.06f, 0.06f, 0.06f});
+    defaultMaterial_->setShininess(64.0f);
+    defaultMaterial_->setRoughnessFactor(0.65f);
 
     // --- Load test texture ---
     const auto assetBasePath = resolveAssetBasePath(config_.assets.assetsPath);

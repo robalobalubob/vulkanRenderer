@@ -21,6 +21,8 @@ A C++17 Vulkan rendering engine designed as a **game engine foundation**. Featur
 - **Deferred draw call collection**: opaque and transparent queues, transparent draws sorted back-to-front
 - **Disk-persistent pipeline cache**: `VkPipelineCache` loaded on startup, saved on shutdown
 - **Shadow pass**: depth-only render pass with front-face culling, light-space matrix, shadow map sampler
+- **Shadow mapping**: 3x3 PCF sampling with slope-scaled bias, applied to the first directional light
+- **ACES tone mapping**: filmic HDR rolloff in the fragment shader; gamma handled by the sRGB swapchain
 
 ### **Lighting**
 - **Blinn-Phong lighting** via a `Light` component attached to scene nodes
@@ -294,8 +296,7 @@ When adding a new source file to the engine, register it in the `vulkan-engine` 
 
 ## Known Gaps
 
-- **Shadow map sampling**: `ShadowPass` is implemented and the light-space matrix is passed through the UBO, but shadow map sampling is not yet integrated into the main fragment shader.
-- **Post-processing**: single render pass only -- no tone mapping, bloom, or HDR resolve.
+- **Post-processing**: single render pass only -- no bloom or HDR resolve (tone mapping is done in-shader).
 - **Audio backend**: `AudioEngine` is stubbed; no miniaudio or OpenAL backend is linked yet.
 - **Physics collision**: `PhysicsWorld` integrates velocity but collision detection and resolution are not implemented.
 - **SceneSerializer**: the component registry and file I/O skeleton are in place; JSON serialization is not yet written.

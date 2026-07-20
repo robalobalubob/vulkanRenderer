@@ -49,8 +49,9 @@ void Logger::log(LogLevel level, LogCategory category, const std::string& messag
     std::string levelStr = levelToString(level);
     std::string categoryStr = categoryToString(category);
     
-    // Extract just the filename from the full path
-    std::string filename = file;
+    // Extract just the filename from the full path (file may be null when
+    // no source location was provided)
+    std::string filename = (file != nullptr) ? file : "";
     size_t lastSlash = filename.find_last_of("/\\");
     if (lastSlash != std::string::npos) {
         filename = filename.substr(lastSlash + 1);
@@ -62,9 +63,10 @@ void Logger::log(LogLevel level, LogCategory category, const std::string& messag
              << "[" << categoryStr << "] "
              << message;
     
-    // Add file/line info for DEBUG and TRACE levels
-    if (level <= LogLevel::DEBUG) {
-        logEntry << " (" << filename << ":" << line << " in " << func << ")";
+    // Add file/line info for DEBUG and TRACE levels when a location was provided
+    if (level <= LogLevel::DEBUG && file != nullptr) {
+        logEntry << " (" << filename << ":" << line << " in "
+                 << ((func != nullptr) ? func : "?") << ")";
     }
     
     // Output to console with color coding
