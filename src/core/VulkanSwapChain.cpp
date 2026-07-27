@@ -125,6 +125,12 @@ namespace vkeng {
         createInfo.imageExtent = extent_;
         createInfo.imageArrayLayers = 1;
         createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // For rendering directly to the image
+        // TRANSFER_SRC lets a presented frame be copied back to host memory
+        // (Renderer::captureFrame). It is optional per the spec, so only request
+        // it where the surface advertises support.
+        if (support_.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
+            createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        }
         createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         createInfo.preTransform = support_.capabilities.currentTransform;
         createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;

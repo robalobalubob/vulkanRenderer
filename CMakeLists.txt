@@ -141,6 +141,7 @@ add_library(vulkan-engine STATIC
     src/resources/Texture.cpp
     src/resources/TextureLoader.cpp
     # Scene
+    src/scene/RdSceneLoader.cpp
     src/scene/SceneNode.cpp
     src/scene/SceneSerializer.cpp
 )
@@ -177,7 +178,12 @@ add_executable(model_viewer
     src/ModelViewerApp.cpp
 )
 
-foreach(vkeng_app IN ITEMS test_scene model_viewer)
+add_executable(rd_viewer
+    src/rd_viewer_main.cpp
+    src/RdViewerApp.cpp
+)
+
+foreach(vkeng_app IN ITEMS test_scene model_viewer rd_viewer)
     add_dependencies(${vkeng_app} prepare_runtime_content)
 
     target_include_directories(${vkeng_app}

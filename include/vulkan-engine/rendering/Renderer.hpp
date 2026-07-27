@@ -118,6 +118,16 @@ namespace vkeng {
         /** @brief Set the shadow pipeline config (depth-only, front-face cull). */
         void setShadowPipelineConfig(const PipelineConfig& config) { m_shadowConfig = config; }
 
+        /** @brief Set the global ambient light color applied to all lit surfaces. */
+        void setAmbientColor(const glm::vec3& color) { m_ambientColor = glm::vec4(color, 1.0f); }
+        /** @brief Get the global ambient light color. */
+        glm::vec3 getAmbientColor() const { return glm::vec3(m_ambientColor); }
+
+        /** @brief Set the background clear color (linear RGB; the sRGB swapchain encodes on write). */
+        void setClearColor(const glm::vec3& color) { m_clearColor = color; }
+        /** @brief Get the background clear color. */
+        const glm::vec3& getClearColor() const { return m_clearColor; }
+
         /** @brief Enable or disable frustum culling. */
         void setCullingEnabled(bool enabled) { m_cullingEnabled = enabled; }
         /** @brief Check if frustum culling is enabled. */
@@ -153,6 +163,21 @@ namespace vkeng {
         void drawFrame(SceneNode& rootNode, Camera& camera,
                          const std::vector<VkDescriptorSet>& descriptorSets,
                          const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
+
+        /**
+         * @brief Reads the most recently presented image back and writes a PPM.
+         *
+         * Writes binary PPM (P6) deliberately: it needs no image library, and it
+         * is the format RD's own `Display "PNM"` mode produced, so captures are
+         * directly comparable with rd_view output.
+         *
+         * Idles the device and issues a one-shot copy, so this is a debugging and
+         * documentation tool rather than something to call every frame.
+         *
+         * @param path Destination file path.
+         * @return Ok, or an Error describing why the capture failed.
+         */
+        Result<void> captureFrame(const std::string& path);
 
     private:
         // ============================================================================
@@ -270,6 +295,7 @@ namespace vkeng {
         // Rendering Resources
         // ============================================================================
         
+        uint32_t m_lastPresentedImage = 0;                  ///< Swapchain index of the last presented frame (for captureFrame)
         std::unique_ptr<CommandPool> m_commandPool;         ///< Command pool for buffer allocation
         std::vector<VkFramebuffer> m_swapChainFramebuffers; ///< Framebuffers for each swap chain image
         bool m_framebufferResized = false;                  ///< Flag indicating pending resize
@@ -291,6 +317,9 @@ namespace vkeng {
         int m_lastKnownHeight = 0;
 
         DebugShadingMode m_debugShadingMode = DebugShadingMode::Lit;
+
+        glm::vec4 m_ambientColor{0.14f, 0.14f, 0.16f, 1.0f}; ///< Global ambient light (rgb used)
+        glm::vec3 m_clearColor{0.0f, 0.0f, 0.0f};            ///< Background clear color (linear)
 
         VkDescriptorSet m_fallbackTextureDescriptorSet = VK_NULL_HANDLE;
 
@@ -319,6 +348,8 @@ namespace vkeng {
             VkDescriptorSet textureDescriptorSet;
             BlendMode blendMode;
             CullMode cullMode;
+            PrimitiveTopology topology;   ///< Taken from the mesh; selects a matching pipeline
+            PolygonMode polygonMode;      ///< Fill, or Line for wireframe materials
             float distanceToCamera;  ///< For back-to-front sorting of transparent objects
         };
 
@@ -355,12 +386,20 @@ namespace vkeng {
         struct FrameData {
             VkCommandBuffer commandBuffer;           ///< Command buffer for this frame's rendering
             VkSemaphore imageAvailableSemaphore;     ///< Signals when swap chain image is available
-            VkSemaphore renderFinishedSemaphore;     ///< Signals when rendering is complete
             VkFence inFlightFence;                   ///< CPU synchronization for frame completion
         };
-        
+
         std::vector<FrameData> m_frames;    ///< Per-frame data for all frames in flight
         uint32_t m_currentFrame = 0;        ///< Current frame index (cycles through frames)
+
+        /// Render-finished semaphores live per SWAPCHAIN IMAGE, not per frame in
+        /// flight: presentation of image N waits on semaphore N, so a later
+        /// submit can never re-signal a semaphore an in-flight present still
+        /// waits on (VUID-vkQueueSubmit-pSignalSemaphores-00067).
+        std::vector<VkSemaphore> m_renderFinishedSemaphores;
+
+        void createRenderFinishedSemaphores();
+        void destroyRenderFinishedSemaphores();
     };
 
 }

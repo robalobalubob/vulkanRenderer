@@ -165,7 +165,7 @@ namespace vkeng {
 
         auto& time = Time::get();
 
-        while (!window_->shouldClose()) {
+        while (!window_->shouldClose() && !exitRequested_) {
             window_->pollEvents();
 
             // Advance the engine clock

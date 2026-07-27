@@ -134,9 +134,22 @@ namespace vkeng {
         float queuePriority = 1.0f;
         queueCreateInfo.pQueuePriorities = &queuePriority;
         
-        // Specify device features to enable (none for this basic example).
+        // Enable the optional features we use, but only where the device offers
+        // them. Requesting an unsupported feature makes vkCreateDevice fail, so
+        // each one is gated on the query and mirrored into a flag that callers
+        // consult before relying on it.
+        VkPhysicalDeviceFeatures supported{};
+        vkGetPhysicalDeviceFeatures(physicalDevice_, &supported);
+
+        fillModeNonSolid_ = supported.fillModeNonSolid == VK_TRUE;
+        wideLines_        = supported.wideLines == VK_TRUE;
+        largePoints_      = supported.largePoints == VK_TRUE;
+
         VkPhysicalDeviceFeatures deviceFeatures{};
-        
+        deviceFeatures.fillModeNonSolid = fillModeNonSolid_ ? VK_TRUE : VK_FALSE;
+        deviceFeatures.wideLines        = wideLines_ ? VK_TRUE : VK_FALSE;
+        deviceFeatures.largePoints      = largePoints_ ? VK_TRUE : VK_FALSE;
+
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         createInfo.pQueueCreateInfos = &queueCreateInfo;

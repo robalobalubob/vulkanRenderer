@@ -85,6 +85,8 @@ namespace vkeng {
                 h ^= std::hash<bool>{}(c.depthWriteEnable) << 4;
                 h ^= std::hash<bool>{}(c.depthTestEnable) << 5;
                 h ^= std::hash<bool>{}(c.depthOnly) << 6;
+                h ^= std::hash<int>{}(static_cast<int>(c.topology)) << 7;
+                h ^= std::hash<int>{}(static_cast<int>(c.polygonMode)) << 8;
                 return h;
             }
         };

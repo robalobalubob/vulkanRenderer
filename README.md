@@ -27,8 +27,26 @@ A C++17 Vulkan rendering engine designed as a **game engine foundation**. Featur
 ### **Lighting**
 - **Blinn-Phong lighting** via a `Light` component attached to scene nodes
 - **Directional, point, and spot lights** -- up to 8 per frame
-- Ambient, diffuse, specular, and emissive contributions
+- **Inverse-square attenuation** with a smooth range window for point/spot lights (no pop at the range cutoff)
+- Ambient, diffuse, specular, and emissive contributions; scene-settable global ambient and background color
 - Occlusion strength and emissive factor controlled via push constants
+
+### **RD Scene Support**
+- **RdSceneLoader**: parses RD (Rendering Description) scene files -- a RenderMan-inspired format from
+  university graphics courses -- and builds engine scene graphs from them
+- **Full geometry command coverage**: camera setup, transform stack, matte/plastic/metal surfaces
+  (Ka/Kd/Ks/Specular), ambient/far/point/cone lights, and every geometry command in the spec --
+  Sphere, SqSphere, Torus, SqTorus, Cube, Cylinder, Cone, Disk, Hyperboloid, Paraboloid, Tube,
+  PolySet, Subdivision, Patch, Curve, Point, PointSet, Line, LineSet, Circle
+- **Object blocks**: `ObjectBegin`/`ObjectEnd`/`ObjectInstance`, including `$n` parameter substitution
+- **Superquadric primitives**: `PrimitiveFactory` generates superquadric spheres and tori with analytic normals,
+  including partial sweeps and z-extent sections; swept surfaces honor partial angular extents
+- **Bezier curves and patches** tessellated with analytic normals from the control mesh
+- **Vertex-colored PolySets** with generated smooth normals (fractal terrains, arbitrary polygon meshes)
+- **Line and point topologies**: `PipelineConfig` carries primitive topology and polygon mode, so RD's
+  one- and zero-dimensional primitives and its `OptionBool "Wireframe"` render natively
+- **rd_viewer** application: renders any `.rd` file from its authored camera, with free-fly and orbit controls,
+  multi-frame animation playback, and headless PPM capture
 
 ### **Camera System**
 - **FirstPersonCameraController**: FPS-style camera with WASD movement
@@ -43,7 +61,7 @@ A C++17 Vulkan rendering engine designed as a **game engine foundation**. Featur
 
 ### **Performance**
 - **Frustum culling**: bounding sphere test per mesh against the camera frustum each frame, with periodic draw/cull stats logged
-- **Multiple frames in flight**: 2 frames in flight with per-frame sync objects (fences, semaphores)
+- **Multiple frames in flight**: 2 frames in flight with per-frame fences/acquire semaphores and per-swapchain-image render-finished semaphores
 
 ### **Engine Subsystems**
 - **Time**: frame delta, fixed timestep accumulator, time scale, FPS tracking
@@ -101,6 +119,13 @@ cmake --build build -j$(nproc)
 # Run the model viewer (defaults to cube.obj if no path given)
 ./build/model_viewer
 ./build/model_viewer path/to/model.obj
+
+# Render an RD scene file
+./build/rd_viewer path/to/scene.rd
+
+# Render one frame headlessly and write it out (RD's own Display "PNM" format)
+./build/rd_viewer path/to/scene.rd --capture shot.ppm
+./build/rd_viewer path/to/animation.rd --capture shot.ppm --frame 12
 ```
 
 On Windows with vcpkg, pass the toolchain file to cmake:
@@ -144,6 +169,47 @@ The model viewer uses orbit controls by default. Pass an optional OBJ path as th
 | **H** | Reprint viewer controls to the log |
 
 A smooth reference sphere is placed to the right of the loaded model. Use it as a known-good smooth-normal surface when comparing against faceted assets.
+
+### rd_viewer (RdViewerApp)
+
+Renders an `.rd` scene file (required first argument) from the camera authored in the file. The window
+adopts the scene's `Display` title and `Format` size. The authored view is held until you start flying.
+
+A file containing multiple `FrameBegin`/`FrameEnd` blocks is played back as an animation. Every frame's
+scene graph is built up front and kept resident, so stepping between frames is only a root swap; meshes
+that recur across frames are built once by the loader's cache.
+
+| Key/Action | Behavior |
+|------------|----------|
+| **ESC** | Quit |
+| **F1** | Toggle cursor capture |
+| **WASD / Q / E** | Start free-fly mode and move |
+| **C** | Toggle between orbit (around the scene) and free-fly |
+| **R** | Return to the authored RD camera view |
+| **V** | Toggle frustum culling |
+| **Space** | Play/pause animation (multi-frame files) |
+| **Left / Right** | Step one frame back/forward (pauses playback) |
+| **Up / Down** | Increase/decrease playback rate |
+
+`--capture <out.ppm>` renders a few warm-up frames, writes a binary PPM, and exits -- useful for
+generating reference images without a window in front of you. `--frame <n>` picks which animation frame
+to capture. PPM is deliberate: it needs no image library and is the format RD's own `Display "PNM"` mode
+produced, so captures are directly comparable with rd_view output.
+
+#### RD command support notes
+
+| Command | Behavior |
+|---------|----------|
+| `Cylinder`, `Cone` | Open surfaces with no end caps, per the RenderMan convention; rendered two-sided |
+| `Circle` | Drawn in the XY plane rather than screen-aligned (a static mesh cannot billboard) |
+| `Subdivision` | Renders the control cage; the Catmull-Clark limit surface is not computed |
+| `Fill` | Skipped -- a screen-space flood fill has no equivalent in a depth-buffered rasterizer |
+| `MapLoad`, `Map`, `MapSample`, `MapBound`, `MapBorder` | Parsed and skipped; texture mapping is not implemented |
+| `Point`, `PointSet` | Drawn as single pixels, matching rd_view |
+
+Points, lines and curves render unlit: RD gives them the drawing colour directly rather than shading them,
+so the loader routes that colour through the emissive slot and flags it to the shader with a negative alpha
+cutoff. They still pass through tone mapping, so a white line matches a fully lit white surface.
 
 ## Project Structure
 
@@ -302,6 +368,8 @@ When adding a new source file to the engine, register it in the `vulkan-engine` 
 - **SceneSerializer**: the component registry and file I/O skeleton are in place; JSON serialization is not yet written.
 - **Instanced rendering**: `CommandBuffer` accepts an instance count but always draws with 1.
 - **Hierarchical frustum culling**: culling is per-mesh only; subtrees are not rejected early.
+- **RD texture mapping**: the `Map*` command family is parsed but not applied; `"painted plastic"` falls back to `plastic`.
+- **RD subdivision surfaces**: `Subdivision` renders its control cage rather than the Catmull-Clark limit surface.
 
 ## Troubleshooting
 

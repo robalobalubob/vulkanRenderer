@@ -48,16 +48,20 @@ layout(location = 6) out vec4 fragLightSpacePos;
 void main() {
     vec4 worldPosition = pushConstants.modelMatrix * vec4(inPosition, 1.0);
 
-    // Normal matrix: for uniform scale + rotation, mat3(model) is sufficient.
-    mat3 normalMatrix = mat3(pushConstants.modelMatrix);
+    // Normal matrix = inverse-transpose of the model 3x3, which is correct under
+    // non-uniform scale (RD scenes feed it, e.g. `Scale 0.3 0.3 1`). For uniform
+    // scale + rotation this reduces to mat3(model) after the normalize below.
+    mat3 modelMat3 = mat3(pushConstants.modelMatrix);
+    mat3 normalMatrix = transpose(inverse(modelMat3));
 
     fragWorldPosition = worldPosition.xyz;
     fragWorldNormal = normalize(normalMatrix * inNormal);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
 
-    // Tangent and bitangent for normal mapping (TBN matrix)
-    vec3 T = normalize(normalMatrix * inTangent.xyz);
+    // Tangent and bitangent for normal mapping (TBN matrix). Tangents lie in the
+    // surface, so they transform with the model matrix, not the inverse-transpose.
+    vec3 T = normalize(modelMat3 * inTangent.xyz);
     vec3 N = fragWorldNormal;
     // Re-orthogonalize T with respect to N
     T = normalize(T - dot(T, N) * N);
@@ -68,4 +72,10 @@ void main() {
     fragLightSpacePos = ubo.lightSpaceMatrix * worldPosition;
 
     gl_Position = ubo.proj * ubo.view * worldPosition;
+
+    // Point-list pipelines (RD's Point and PointSet) require the vertex stage to
+    // write PointSize, and Vulkan validates it whether or not the bound topology
+    // is actually points. A size of 1.0 needs no optional device feature and
+    // matches rd_view, which drew RD points as single pixels.
+    gl_PointSize = 1.0;
 }

@@ -69,9 +69,9 @@ Renderer::~Renderer() {
     }
     for (auto& frame : m_frames) {
         vkDestroySemaphore(m_device.getDevice(), frame.imageAvailableSemaphore, nullptr);
-        vkDestroySemaphore(m_device.getDevice(), frame.renderFinishedSemaphore, nullptr);
         vkDestroyFence(m_device.getDevice(), frame.inFlightFence, nullptr);
     }
+    destroyRenderFinishedSemaphores();
 }
 
 // ============================================================================
@@ -153,7 +153,7 @@ void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &frame.commandBuffer;
-    VkSemaphore signalSemaphores[] = {frame.renderFinishedSemaphore};
+    VkSemaphore signalSemaphores[] = {m_renderFinishedSemaphores[imageIndex]};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -172,7 +172,8 @@ void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
     presentInfo.pImageIndices = &imageIndex;
 
     result = vkQueuePresentKHR(m_device.getGraphicsQueue(), &presentInfo);
-    
+    m_lastPresentedImage = imageIndex;  // captureFrame reads this image back
+
     // Handle present errors - OUT_OF_DATE requires recreation, SUBOPTIMAL can continue
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         LOG_INFO(VULKAN, "Swapchain out of date on present, recreating...");
@@ -241,7 +242,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     renderPassInfo.renderArea.extent = extent;
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[0].color = {{m_clearColor.r, m_clearColor.g, m_clearColor.b, 1.0f}};
     clearValues[1].depthStencil = {1.0f, 0};
 
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -289,7 +290,7 @@ void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
     ubo.proj = camera.getProjectionMatrix();
     ubo.lightSpaceMatrix = m_lightSpaceMatrix;
     ubo.cameraPosition = glm::vec4(camera.getPosition(), 1.0f);
-    ubo.ambientColor = glm::vec4(0.14f, 0.14f, 0.16f, 1.0f);
+    ubo.ambientColor = m_ambientColor;
     float shadowsEnabled = (m_shadowPass != nullptr) ? 1.0f : 0.0f;
     ubo.debugView = glm::vec4(static_cast<float>(m_debugShadingMode), shadowsEnabled, 0.0f, 0.0f);
 
@@ -342,11 +343,26 @@ void Renderer::collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPo
             dc.textureDescriptorSet = m_fallbackTextureDescriptorSet;
             dc.blendMode = BlendMode::Opaque;
             dc.cullMode = CullMode::Back;
+            dc.topology = mesh->getTopology();
+            dc.polygonMode = PolygonMode::Fill;
+
+            // Lines and points have no facing, so culling them is meaningless;
+            // leaving Back set would still create a redundant pipeline variant.
+            if (!mesh->isSurface()) {
+                dc.cullMode = CullMode::None;
+            }
 
             if (auto material = meshRenderer->getMaterial()) {
                 const auto& factors = material->getFactors();
                 dc.pushConstants.baseColorFactor = factors.baseColorFactor;
-                float alphaCutoff = (material->getAlphaMode() == AlphaMode::Mask) ? factors.alphaCutoff : 0.0f;
+                // emissiveFactor.w does double duty: a positive value is the
+                // alpha-mask cutoff, and -1 flags an unlit draw (see shader.frag).
+                // Both fit in one slot because push constants are capped at the
+                // 128 bytes this struct already fills, and a material is never
+                // both alpha-masked and unlit.
+                float alphaCutoff = factors.unlit
+                    ? -1.0f
+                    : ((material->getAlphaMode() == AlphaMode::Mask) ? factors.alphaCutoff : 0.0f);
                 dc.pushConstants.emissiveFactor = glm::vec4(factors.emissiveFactor, alphaCutoff);
                 dc.pushConstants.specularColorAndShininess = glm::vec4(factors.specularColor, factors.shininess);
                 dc.pushConstants.pbrFactors = glm::vec4(factors.metallicFactor, factors.roughnessFactor, factors.normalScale, factors.occlusionStrength);
@@ -370,6 +386,13 @@ void Renderer::collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPo
 
                 if (factors.doubleSided) {
                     dc.cullMode = CullMode::None;
+                }
+
+                // Wireframe needs fillModeNonSolid. Where the device lacks it,
+                // fall back to solid rather than creating an invalid pipeline.
+                if (factors.wireframe && mesh->isSurface() && m_device.supportsNonSolidFill()) {
+                    dc.polygonMode = PolygonMode::Line;
+                    dc.cullMode = CullMode::None;  // show the back edges too
                 }
             }
 
@@ -401,6 +424,8 @@ void Renderer::issueDrawCalls(VkCommandBuffer commandBuffer) {
             PipelineConfig config = m_defaultConfig;
             config.blendMode = dc.blendMode;
             config.cullMode = dc.cullMode;
+            config.topology = dc.topology;
+            config.polygonMode = dc.polygonMode;
             // Transparent objects: read depth but don't write (allows correct layering)
             if (dc.blendMode == BlendMode::AlphaBlend) {
                 config.depthWriteEnable = false;
@@ -432,6 +457,154 @@ void Renderer::issueDrawCalls(VkCommandBuffer commandBuffer) {
     // Draw opaque objects first, then transparent (back-to-front, already sorted)
     issueBatch(m_opaqueDrawCalls);
     issueBatch(m_transparentDrawCalls);
+}
+
+Result<void> Renderer::captureFrame(const std::string& path) {
+    // Everything below assumes nothing is in flight touching the swapchain image
+    vkDeviceWaitIdle(m_device.getDevice());
+
+    const auto& images = m_swapChain.images();
+    if (m_lastPresentedImage >= images.size()) {
+        return Result<void>(Error("captureFrame: no frame has been presented yet"));
+    }
+    const VkImage source = images[m_lastPresentedImage];
+    const VkExtent2D extent = m_swapChain.extent();
+    const VkDeviceSize bufferSize =
+        static_cast<VkDeviceSize>(extent.width) * extent.height * 4;
+
+    // A raw allocation rather than the MemoryManager: the Renderer does not own
+    // one, and threading it through the constructor for a debug-only path would
+    // be a worse trade than the ~30 lines here.
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = bufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(m_device.getDevice(), &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        return Result<void>(Error("captureFrame: failed to create readback buffer"));
+    }
+
+    VkMemoryRequirements memRequirements{};
+    vkGetBufferMemoryRequirements(m_device.getDevice(), buffer, &memRequirements);
+
+    VkPhysicalDeviceMemoryProperties memProperties{};
+    vkGetPhysicalDeviceMemoryProperties(m_device.getPhysicalDevice(), &memProperties);
+
+    const VkMemoryPropertyFlags wanted =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    uint32_t memoryTypeIndex = UINT32_MAX;
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
+        if ((memRequirements.memoryTypeBits & (1u << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & wanted) == wanted) {
+            memoryTypeIndex = i;
+            break;
+        }
+    }
+    if (memoryTypeIndex == UINT32_MAX) {
+        vkDestroyBuffer(m_device.getDevice(), buffer, nullptr);
+        return Result<void>(Error("captureFrame: no host-visible memory type available"));
+    }
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = memoryTypeIndex;
+    if (vkAllocateMemory(m_device.getDevice(), &allocInfo, nullptr, &memory) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device.getDevice(), buffer, nullptr);
+        return Result<void>(Error("captureFrame: failed to allocate readback memory"));
+    }
+    vkBindBufferMemory(m_device.getDevice(), buffer, memory, 0);
+
+    auto cleanup = [&]() {
+        vkDestroyBuffer(m_device.getDevice(), buffer, nullptr);
+        vkFreeMemory(m_device.getDevice(), memory, nullptr);
+    };
+
+    auto cmdResult = m_commandPool->beginSingleTimeCommands();
+    if (!cmdResult) {
+        cleanup();
+        return Result<void>(cmdResult.getError());
+    }
+    VkCommandBuffer cmd = cmdResult.getValue();
+
+    // The presented image sits in PRESENT_SRC_KHR; move it to TRANSFER_SRC for
+    // the copy and put it back so presentation can continue afterwards.
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = source;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;    // tightly packed
+    region.bufferImageHeight = 0;
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {extent.width, extent.height, 1};
+    vkCmdCopyImageToBuffer(cmd, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &region);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    auto endResult = m_commandPool->endSingleTimeCommands(cmd, m_device.getGraphicsQueue());
+    if (!endResult) {
+        cleanup();
+        return Result<void>(endResult.getError());
+    }
+
+    void* mapped = nullptr;
+    if (vkMapMemory(m_device.getDevice(), memory, 0, bufferSize, 0, &mapped) != VK_SUCCESS) {
+        cleanup();
+        return Result<void>(Error("captureFrame: failed to map readback memory"));
+    }
+
+    std::ofstream out(path, std::ios::binary);
+    if (!out.is_open()) {
+        vkUnmapMemory(m_device.getDevice(), memory);
+        cleanup();
+        return Result<void>(Error("captureFrame: failed to open " + path));
+    }
+
+    // The swapchain format is sRGB, so the bytes are already gamma-encoded and
+    // go straight into the file. Only the channel order needs fixing.
+    const bool bgra = m_swapChain.imageFormat() == VK_FORMAT_B8G8R8A8_SRGB ||
+                      m_swapChain.imageFormat() == VK_FORMAT_B8G8R8A8_UNORM;
+
+    out << "P6\n" << extent.width << " " << extent.height << "\n255\n";
+    const auto* pixels = static_cast<const uint8_t*>(mapped);
+    std::vector<uint8_t> row(static_cast<size_t>(extent.width) * 3);
+    for (uint32_t y = 0; y < extent.height; ++y) {
+        const uint8_t* src = pixels + static_cast<size_t>(y) * extent.width * 4;
+        for (uint32_t x = 0; x < extent.width; ++x) {
+            const uint8_t* px = src + static_cast<size_t>(x) * 4;
+            row[x * 3 + 0] = bgra ? px[2] : px[0];
+            row[x * 3 + 1] = px[1];
+            row[x * 3 + 2] = bgra ? px[0] : px[2];
+        }
+        out.write(reinterpret_cast<const char*>(row.data()), static_cast<std::streamsize>(row.size()));
+    }
+    out.close();
+
+    vkUnmapMemory(m_device.getDevice(), memory);
+    cleanup();
+
+    LOG_INFO(RENDERING, "Captured frame to {} ({}x{})", path, extent.width, extent.height);
+    return Result<void>();
 }
 
 // Legacy renderNode for backward compatibility (delegates to collectDrawCalls)
@@ -523,11 +696,31 @@ void Renderer::createSyncObjects() {
 
     for (size_t i = 0; i < m_frames.size(); i++) {
         if (vkCreateSemaphore(m_device.getDevice(), &semaphoreInfo, nullptr, &m_frames[i].imageAvailableSemaphore) != VK_SUCCESS ||
-            vkCreateSemaphore(m_device.getDevice(), &semaphoreInfo, nullptr, &m_frames[i].renderFinishedSemaphore) != VK_SUCCESS ||
             vkCreateFence(m_device.getDevice(), &fenceInfo, nullptr, &m_frames[i].inFlightFence) != VK_SUCCESS) {
             throw std::runtime_error("failed to create synchronization objects for a frame!");
         }
     }
+
+    createRenderFinishedSemaphores();
+}
+
+void Renderer::createRenderFinishedSemaphores() {
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    m_renderFinishedSemaphores.resize(m_swapChain.imageViews().size());
+    for (auto& semaphore : m_renderFinishedSemaphores) {
+        if (vkCreateSemaphore(m_device.getDevice(), &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create render-finished semaphore!");
+        }
+    }
+}
+
+void Renderer::destroyRenderFinishedSemaphores() {
+    for (auto semaphore : m_renderFinishedSemaphores) {
+        vkDestroySemaphore(m_device.getDevice(), semaphore, nullptr);
+    }
+    m_renderFinishedSemaphores.clear();
 }
 
 void Renderer::recreateSwapChain(Camera& camera) {
@@ -545,6 +738,11 @@ void Renderer::recreateSwapChain(Camera& camera) {
     }
 
     m_swapChain.recreate(width, height);
+
+    // Per-image semaphores must track the (possibly changed) image count;
+    // safe to recreate here because the device is idle
+    destroyRenderFinishedSemaphores();
+    createRenderFinishedSemaphores();
 
     // Get the actual extent from swapchain (this is the source of truth)
     VkExtent2D extent = m_swapChain.extent();
@@ -660,8 +858,18 @@ void Renderer::recordShadowPass(VkCommandBuffer commandBuffer, VkDescriptorSet u
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         layout, 0, 1, &uboDescriptorSet, 0, nullptr);
 
-    // Issue opaque draw calls only (transparent objects don't cast shadows)
+    // Issue opaque draw calls only (transparent objects don't cast shadows).
+    // The shadow pipeline is triangle-list; feeding it a line or point index
+    // buffer would reinterpret those indices as triangles, so skip anything
+    // that isn't a surface. Lines and points cast no shadow.
+    //
+    // Wireframe draws are skipped for a different reason: the shadow pass
+    // rasterizes solid, so a see-through wireframe sphere would cast the shadow
+    // of a solid one. Matching what the viewer sees matters more here than
+    // shadowing the individual edges.
     for (const auto& dc : m_opaqueDrawCalls) {
+        if (!dc.mesh->isSurface() || dc.polygonMode != PolygonMode::Fill) continue;
+
         vkCmdPushConstants(commandBuffer, layout,
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
             0, sizeof(MeshPushConstants), &dc.pushConstants);

@@ -30,6 +30,7 @@ struct MaterialFactors {
     float shininess = 32.0f;
     bool doubleSided = false;
     bool unlit = false;
+    bool wireframe = false;  ///< Rasterize surfaces as edges (RD's OptionBool "Wireframe")
 };
 
 struct MaterialTextures {

@@ -96,6 +96,14 @@ namespace vkeng {
         
         /** @brief Gets the image views for all swap chain images. */
         const std::vector<VkImageView>& imageViews() const { return imageViews_; }
+
+        /**
+         * @brief Gets the swap chain images themselves (owned by the swapchain).
+         *
+         * Needed to read a presented frame back to host memory; see
+         * Renderer::captureFrame.
+         */
+        const std::vector<VkImage>& images() const { return images_; }
         
         /** @brief Gets the raw Vulkan swap chain handle. */
         VkSwapchainKHR swapChain() const { return swapChain_; }

@@ -86,10 +86,18 @@ namespace vkeng {
         void run();
 
     protected:
+        /**
+         * @brief Asks the main loop to stop after the current frame.
+         *
+         * Lets an app end its own run without the user closing the window —
+         * batch and capture modes, for instance.
+         */
+        void requestExit() { exitRequested_ = true; }
+
         // ============================================================================
         // Lifecycle Hooks - Must be implemented by derived classes
         // ============================================================================
-        
+
         /**
          * @brief Called once after Vulkan initialization
          * 
@@ -190,6 +198,7 @@ namespace vkeng {
         std::unique_ptr<PhysicsWorld> physicsWorld_;    ///< Physics simulation
         std::unique_ptr<AudioEngine> audioEngine_;      ///< Audio playback and spatial sound
         SceneNode* m_sceneRoot = nullptr;               ///< Non-owning pointer to the scene root
+        bool exitRequested_ = false;                    ///< Set by requestExit() to end the main loop
 
     private:
         /**

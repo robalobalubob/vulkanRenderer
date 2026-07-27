@@ -40,6 +40,32 @@ namespace vkeng {
     };
 
     /**
+     * @brief Primitive assembly topology.
+     *
+     * Mirrors the VkPrimitiveTopology values the engine uses. Meshes carry
+     * their own topology (see Mesh::getTopology) and the renderer selects a
+     * matching pipeline variant.
+     */
+    enum class PrimitiveTopology {
+        TriangleList,   ///< Default: indices form independent triangles
+        LineList,       ///< Indices form independent line segments
+        LineStrip,      ///< Indices form a connected polyline
+        PointList       ///< Each index is an isolated point
+    };
+
+    /**
+     * @brief Polygon rasterization mode.
+     *
+     * Line and Point require the fillModeNonSolid device feature; check
+     * VulkanDevice::supportsNonSolidFill() before requesting them.
+     */
+    enum class PolygonMode {
+        Fill,       ///< Solid filled polygons (default)
+        Line,       ///< Wireframe
+        Point       ///< Vertices only
+    };
+
+    /**
      * @struct PipelineConfig
      * @brief Describes a pipeline variant for PipelineManager lookup/creation
      *
@@ -51,6 +77,8 @@ namespace vkeng {
         std::filesystem::path fragShaderPath;
         BlendMode blendMode = BlendMode::Opaque;
         CullMode cullMode = CullMode::Back;
+        PrimitiveTopology topology = PrimitiveTopology::TriangleList;
+        PolygonMode polygonMode = PolygonMode::Fill;
         bool depthWriteEnable = true;
         bool depthTestEnable = true;
         bool depthOnly = false;       ///< True for depth-only passes (no color attachments)
@@ -60,6 +88,8 @@ namespace vkeng {
                 && fragShaderPath == other.fragShaderPath
                 && blendMode == other.blendMode
                 && cullMode == other.cullMode
+                && topology == other.topology
+                && polygonMode == other.polygonMode
                 && depthWriteEnable == other.depthWriteEnable
                 && depthTestEnable == other.depthTestEnable
                 && depthOnly == other.depthOnly;

@@ -127,6 +127,16 @@ void main() {
         discard;
     }
 
+    // A negative cutoff flags an unlit draw. Points, lines and curves have no
+    // surface normal to light, so RD gives them the drawing colour directly;
+    // that colour arrives as emissiveFactor * vertex colour (exactly one of the
+    // two is white). Tone mapping still applies, so an unlit white line matches
+    // a fully lit white surface instead of overshooting it.
+    if (alphaCutoff < 0.0) {
+        outColor = vec4(tonemapACES(fragColor * pushConstants.emissiveFactor.rgb), alpha);
+        return;
+    }
+
     // PBR material factors from textures and push constants
     float metallic = pushConstants.pbrFactors.x;
     float roughness = pushConstants.pbrFactors.y;
@@ -204,10 +214,12 @@ void main() {
             float dist = length(toLight);
             L = toLight / max(dist, 0.0001);
 
-            // Smooth distance attenuation
+            // Physically-based inverse-square falloff with a smooth range window
+            // (zero at the range boundary so lights never pop at the cutoff)
             float range = light.directionAndRange.w;
-            float ratio = clamp(dist / range, 0.0, 1.0);
-            attenuation = (1.0 - ratio) * (1.0 - ratio);
+            float rangeRatio = clamp(dist / max(range, 0.0001), 0.0, 1.0);
+            float window = 1.0 - rangeRatio * rangeRatio;
+            attenuation = (window * window) / max(dist * dist, 0.0001);
 
             if (lightType > 1.5) {
                 // --- Spot light angular falloff ---

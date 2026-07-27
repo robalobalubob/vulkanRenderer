@@ -158,8 +158,20 @@ namespace vkeng {
         // Describes the primitive topology (e.g., triangles, lines).
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        inputAssembly.primitiveRestartEnable = VK_FALSE;
+        switch (config.topology) {
+            case PrimitiveTopology::TriangleList:
+                inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; break;
+            case PrimitiveTopology::LineList:
+                inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST; break;
+            case PrimitiveTopology::LineStrip:
+                inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP; break;
+            case PrimitiveTopology::PointList:
+                inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST; break;
+        }
+        // Strips need primitive restart so several polylines can share one index
+        // buffer, separated by 0xFFFFFFFF. List topologies must leave it off.
+        inputAssembly.primitiveRestartEnable =
+            (config.topology == PrimitiveTopology::LineStrip) ? VK_TRUE : VK_FALSE;
 
         // --- 4. Viewport and Scissor State ---
         VkViewport viewport{};
@@ -186,7 +198,16 @@ namespace vkeng {
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.depthClampEnable = VK_FALSE;
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
-        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        // Line/Point modes need the fillModeNonSolid device feature. Callers gate
+        // on VulkanDevice::supportsNonSolidFill() before requesting them; by the
+        // time a config reaches here it is already known to be creatable.
+        switch (config.polygonMode) {
+            case PolygonMode::Fill:  rasterizer.polygonMode = VK_POLYGON_MODE_FILL; break;
+            case PolygonMode::Line:  rasterizer.polygonMode = VK_POLYGON_MODE_LINE; break;
+            case PolygonMode::Point: rasterizer.polygonMode = VK_POLYGON_MODE_POINT; break;
+        }
+        // Anything other than 1.0 requires the wideLines feature; stay at the
+        // guaranteed width so no pipeline depends on an optional capability.
         rasterizer.lineWidth = 1.0f;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         if (config.depthOnly) {

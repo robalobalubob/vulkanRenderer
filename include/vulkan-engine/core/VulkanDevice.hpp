@@ -89,6 +89,21 @@ namespace vkeng {
          */
         uint32_t getGraphicsFamily() const { return graphicsFamily_; }
 
+        /**
+         * @brief Whether VK_POLYGON_MODE_LINE / _POINT pipelines may be created.
+         *
+         * Requires the fillModeNonSolid feature. Universally available on
+         * desktop GPUs but optional in the spec, so callers must fall back to
+         * VK_POLYGON_MODE_FILL when this returns false.
+         */
+        bool supportsNonSolidFill() const { return fillModeNonSolid_; }
+
+        /** @brief Whether a rasterization lineWidth other than 1.0 is permitted. */
+        bool supportsWideLines() const { return wideLines_; }
+
+        /** @brief Whether a point size other than 1.0 may be written by a shader. */
+        bool supportsLargePoints() const { return largePoints_; }
+
         private:
         // ============================================================================
         // Internal Device Setup Methods
@@ -114,6 +129,11 @@ namespace vkeng {
         VkDevice device_{VK_NULL_HANDLE};                 ///< Logical device interface
         VkQueue graphicsQueue_{VK_NULL_HANDLE};           ///< Graphics command queue
         uint32_t graphicsFamily_{UINT32_MAX};             ///< Graphics queue family index
+
+        // Optional features, enabled only when the physical device advertises them
+        bool fillModeNonSolid_{false};                    ///< Wireframe / point polygon modes
+        bool wideLines_{false};                           ///< lineWidth != 1.0
+        bool largePoints_{false};                         ///< gl_PointSize != 1.0
 
         // Future expansion: Add support for compute queues, transfer queues, etc.
     };
