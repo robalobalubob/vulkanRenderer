@@ -1,0 +1,35 @@
+# A cube with correct outward-facing normals
+# Vertices are ordered: front face (z=+0.5), back face (z=-0.5)
+
+v -0.5 -0.5  0.5
+v  0.5 -0.5  0.5
+v  0.5  0.5  0.5
+v -0.5  0.5  0.5
+v -0.5 -0.5 -0.5
+v  0.5 -0.5 -0.5
+v  0.5  0.5 -0.5
+v -0.5  0.5 -0.5
+
+# Front face (z=+0.5, normal pointing +Z)
+f 1 2 3
+f 3 4 1
+
+# Back face (z=-0.5, normal pointing -Z)  
+f 6 5 8
+f 8 7 6
+
+# Left face (x=-0.5, normal pointing -X)
+f 5 1 4
+f 4 8 5
+
+# Right face (x=+0.5, normal pointing +X)
+f 2 6 7
+f 7 3 2
+
+# Bottom face (y=-0.5, normal pointing -Y)
+f 5 6 2
+f 2 1 5
+
+# Top face (y=+0.5, normal pointing +Y)
+f 4 3 7
+f 7 8 4

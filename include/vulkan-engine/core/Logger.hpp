@@ -47,9 +47,7 @@ enum class LogCategory {
     CAMERA,    ///< Camera movement and view calculations
     RENDERING, ///< Graphics rendering and pipeline operations
     VULKAN,    ///< Vulkan API calls and validation layers
-    MEMORY,    ///< Memory allocation and resource management
-    PHYSICS,   ///< Physics simulation and collision detection
-    AUDIO      ///< Audio playback and spatial sound
+    MEMORY     ///< Memory allocation and resource management
 };
 
 /**

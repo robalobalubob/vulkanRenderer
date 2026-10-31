@@ -154,5 +154,14 @@ compile_flags.txt
 !CHANGELOG.md
 !LICENSE.md
 
-assets/
-docs/screenshots/
+# Project instructions and Claude tooling, minus machine-local state
+!CLAUDE.md
+!.claude/**/*.md
+!.claude/settings.json
+.claude/settings.local.json
+.claude/worktrees/
+
+# Assets: only what the render tests and default viewers need, and is ours to share
+assets/*
+!assets/rd/
+!assets/cube.obj

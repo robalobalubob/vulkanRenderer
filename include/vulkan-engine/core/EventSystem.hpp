@@ -2,26 +2,24 @@
  * @file EventSystem.hpp
  * @brief Lightweight publish/subscribe event bus for decoupling engine subsystems
  *
- * Allows subsystems (physics, audio, rendering) to communicate without
- * depending on each other directly. Events are identified by type and
- * dispatched synchronously to registered listeners.
+ * Allows subsystems to communicate without depending on each other directly.
+ * Events are identified by type and dispatched synchronously to registered
+ * listeners.
  *
  * Usage:
  * @code
  *   // Define an event
- *   struct CollisionEvent {
- *       SceneNode* a;
- *       SceneNode* b;
- *       glm::vec3  contactPoint;
+ *   struct SceneLoadedEvent {
+ *       SceneNode* root;
  *   };
  *
  *   // Subscribe
- *   EventSystem::get().subscribe<CollisionEvent>([](const CollisionEvent& e) {
- *       LOG_INFO(PHYSICS, "Collision between nodes");
+ *   EventSystem::get().subscribe<SceneLoadedEvent>([](const SceneLoadedEvent& e) {
+ *       LOG_INFO(GENERAL, "Scene loaded");
  *   });
  *
  *   // Publish
- *   EventSystem::get().publish(CollisionEvent{nodeA, nodeB, point});
+ *   EventSystem::get().publish(SceneLoadedEvent{root});
  * @endcode
  */
 #pragma once

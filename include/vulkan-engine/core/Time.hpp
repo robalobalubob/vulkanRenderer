@@ -5,7 +5,7 @@
  * Provides a centralized clock for the engine. Tracks frame delta time,
  * total elapsed time, frame count, and a configurable time scale.
  * Designed to feed both variable-rate updates (rendering, input) and
- * fixed-rate updates (physics) from a single authoritative source.
+ * fixed-rate updates from a single authoritative source.
  */
 #pragma once
 
@@ -24,7 +24,7 @@ namespace vkeng {
      * Fixed timestep usage:
      * @code
      *   while (Time::get().consumeFixedStep()) {
-     *       physics.step(Time::get().fixedDeltaTime());
+     *       onFixedUpdate(Time::get().fixedDeltaTime());
      *   }
      * @endcode
      */
@@ -64,7 +64,7 @@ namespace vkeng {
         float fps() const { return m_fps; }
 
         // ============================================================================
-        // Fixed-rate (physics) timestep
+        // Fixed-rate timestep
         // ============================================================================
 
         /** @brief The fixed timestep interval in seconds (default 1/60). */
@@ -75,7 +75,7 @@ namespace vkeng {
 
         /**
          * @brief Consume one fixed-step quantum from the accumulator.
-         * @return true if a step was consumed (caller should run one physics update),
+         * @return true if a step was consumed (caller should run one fixed update),
          *         false if the accumulator is exhausted for this frame.
          */
         bool consumeFixedStep();

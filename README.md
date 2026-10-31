@@ -1,16 +1,19 @@
-# Vulkan Engine
+# vkeng
 
-A C++17 Vulkan rendering engine designed as a **game engine foundation**. Features physically-based rendering, a multi-pipeline material system, component-based scene graph, shadow mapping, frustum culling, and comprehensive logging.
+A C++17 real-time **Vulkan renderer**. Features a multi-pipeline material system, component-based scene graph, shadow mapping, frustum culling, and a loader that re-renders RD scene files.
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)
-![Vulkan](https://img.shields.io/badge/Vulkan-1.0%2B-red)
+![Vulkan](https://img.shields.io/badge/Vulkan-1.2%2B-red)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)
+
+## Scope
+
+This project is a renderer, and its work goes into image quality and the rendering architecture. Gameplay systems such as physics, audio and scene saving are out of scope.
 
 ## Features
 
-### **PBR Material System**
-- **5-slot PBR textures**: base color, normal, metallic-roughness, occlusion, emissive
+### **Material System**
+- **5 texture slots following glTF conventions**: base color, normal, metallic-roughness, occlusion, emissive
 - **Normal mapping**: TBN matrix computed per-vertex, tangent-space normals applied in the fragment shader
 - **Metallic-roughness modulation**: metallic shifts specular toward base color, roughness controls shininess
 - **Fallback textures**: 1x1 white (base color/occlusion/emissive), flat normal (128,128,255), default metallic-roughness
@@ -29,7 +32,10 @@ A C++17 Vulkan rendering engine designed as a **game engine foundation**. Featur
 - **Directional, point, and spot lights** -- up to 8 per frame
 - **Inverse-square attenuation** with a smooth range window for point/spot lights (no pop at the range cutoff)
 - Ambient, diffuse, specular, and emissive contributions; scene-settable global ambient and background color
-- Occlusion strength and emissive factor controlled via push constants
+- **Material data lives in a per-frame storage buffer** (set 0, binding 1) indexed by a material index in
+  push constants, rather than packed into the 128-byte push constant block. Boolean properties (unlit,
+  alpha mask) are an explicit `MaterialFlagBits` bitfield, so adding a material property does not mean
+  finding a spare float component to overload
 
 ### **RD Scene Support**
 - **RdSceneLoader**: parses RD (Rendering Description) scene files -- a RenderMan-inspired format from
@@ -66,12 +72,10 @@ A C++17 Vulkan rendering engine designed as a **game engine foundation**. Featur
 ### **Engine Subsystems**
 - **Time**: frame delta, fixed timestep accumulator, time scale, FPS tracking
 - **EventSystem**: type-safe publish/subscribe event bus for decoupling subsystems
-- **PhysicsWorld**: scene graph traversal, semi-implicit Euler integration, gravity (collision resolution pending)
-- **AudioEngine**: clip loading and spatial update loop (backend pending)
-- **SceneSerializer**: component-registry-based save/load (JSON implementation pending)
 
 ### **Developer Experience**
-- **Structured logging**: color-coded, categorized logging (GENERAL, INPUT, CAMERA, RENDERING, VULKAN, MEMORY, PHYSICS, AUDIO)
+- **Structured logging**: color-coded, categorized logging (GENERAL, INPUT, CAMERA, RENDERING, VULKAN, MEMORY)
+- **Render regression tests**: RD scenes are captured and compared with saved images through CTest
 - **VMA integration**: Vulkan Memory Allocator for efficient GPU memory management
 - **RAII design**: every Vulkan handle created in a constructor is destroyed in the destructor
 - **Cross-platform**: CMake build system, no platform-specific headers in engine code
@@ -82,7 +86,7 @@ A C++17 Vulkan rendering engine designed as a **game engine foundation**. Featur
 
 - **C++17 compatible compiler** (GCC 7+, Clang 5+, MSVC 2017+)
 - **CMake 3.16+**
-- **Vulkan SDK** (1.0+) -- provides `glslc` for shader compilation
+- **Vulkan SDK** (1.2+) -- provides `glslc` for shader compilation
 - **GLFW 3.3+**
 - **GLM** (OpenGL Mathematics library)
 - **Vulkan Memory Allocator (VMA)**
@@ -99,7 +103,7 @@ sudo apt install cmake build-essential libglfw3-dev libglm-dev
 - Install the Vulkan SDK from [LunarG](https://vulkan.lunarg.com/) (includes `glslc` and validation layers)
 - Install vcpkg and run:
 ```cmd
-vcpkg install glfw3 glm vulkan-memory-allocator
+vcpkg install glfw3 glm
 ```
 
 ### Building
@@ -208,8 +212,8 @@ produced, so captures are directly comparable with rd_view output.
 | `Point`, `PointSet` | Drawn as single pixels, matching rd_view |
 
 Points, lines and curves render unlit: RD gives them the drawing colour directly rather than shading them,
-so the loader routes that colour through the emissive slot and flags it to the shader with a negative alpha
-cutoff. They still pass through tone mapping, so a white line matches a fully lit white surface.
+so the loader routes that colour through the emissive slot and sets the material's unlit flag. They still
+pass through tone mapping, so a white line matches a fully lit white surface.
 
 ## Project Structure
 
@@ -223,14 +227,13 @@ vulkanRenderer/
 |   +-- resources/     Mesh, MeshLoader, Texture, TextureLoader, Material,
 |   |                  PrimitiveFactory, ResourceManager
 |   +-- components/    Component (base), MeshRenderer, Light
-|   +-- scene/         SceneNode, SceneSerializer
+|   +-- scene/         SceneNode, RdSceneLoader
 |   +-- math/          Transform
-|   +-- physics/       PhysicsWorld, RigidBody, Collider (stubs)
-|   +-- audio/         AudioEngine, AudioSource, AudioListener (stubs)
-|   +-- examples/      HelloTriangleApp, ModelViewerApp
+|   +-- examples/      HelloTriangleApp, ModelViewerApp, RdViewerApp
 +-- src/               Implementations mirroring the include structure
 +-- shaders/           GLSL shader sources (compiled to SPIR-V by CMake)
-+-- assets/            OBJ models staged into the build directory at build time
++-- assets/            Models and RD scenes staged into the build directory at build time
++-- tests/             Render regression tests and their saved images (tests/golden/)
 +-- third_party/vma/   Vulkan Memory Allocator (git submodule)
 +-- build/             CMake output -- staged shaders (build/shaders/) and assets (build/assets/)
 ```
@@ -267,11 +270,6 @@ vulkanRenderer/
 - **Mesh**: vertex and index buffers on the GPU; stores a bounding sphere for frustum culling
 - **Texture**: GPU image + sampler RAII wrapper
 - **PrimitiveFactory**: static methods returning shared_ptr<Mesh> for box, sphere, plane, cylinder, cone, torus, quad
-
-### Stubbed Subsystems
-- **PhysicsWorld**: scene traversal, semi-implicit Euler integration, gravity; collision detection/resolution pending
-- **AudioEngine**: clip loading, master volume, spatial update loop; no backend linked yet
-- **SceneSerializer**: component-registry save/load; JSON serialization pending
 
 ## Configuration
 
@@ -360,12 +358,26 @@ cd shaders/
 ### Adding New .cpp Files
 When adding a new source file to the engine, register it in the `vulkan-engine` STATIC library source list in [CMakeLists.txt](CMakeLists.txt). Forgetting this step will cause linker errors.
 
+### Render Regression Tests
+```bash
+cmake --build build --config Debug --parallel
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+Each test renders an RD scene with `rd_viewer --capture` and compares it with its image in `tests/golden/`,
+allowing small per-channel differences. A test also fails if the run logs a validation message or an error;
+validation layers only run in Debug builds, so use Debug for the full check. Each test opens a window briefly.
+
+The saved images came from one machine, so a different GPU or driver may need its own. After an intended
+visual change, set `VKENG_UPDATE_GOLDENS=1` while running `ctest` to replace them, then review the new images.
+
 ## Known Gaps
 
+- **Lighting model**: Blinn-Phong adjusted by metallic and roughness, not a physically based BRDF.
+- **Model formats**: OBJ only; there is no glTF loader.
 - **Post-processing**: single render pass only -- no bloom or HDR resolve (tone mapping is done in-shader).
-- **Audio backend**: `AudioEngine` is stubbed; no miniaudio or OpenAL backend is linked yet.
-- **Physics collision**: `PhysicsWorld` integrates velocity but collision detection and resolution are not implemented.
-- **SceneSerializer**: the component registry and file I/O skeleton are in place; JSON serialization is not yet written.
+- **Texture filtering and antialiasing**: no mipmaps, anisotropic filtering or MSAA.
+- **Shadow coverage**: the first directional light only, over a fixed 20-unit box around the world origin.
 - **Instanced rendering**: `CommandBuffer` accepts an instance count but always draws with 1.
 - **Hierarchical frustum culling**: culling is per-mesh only; subtrees are not rejected early.
 - **RD texture mapping**: the `Map*` command family is parsed but not applied; `"painted plastic"` falls back to `plastic`.

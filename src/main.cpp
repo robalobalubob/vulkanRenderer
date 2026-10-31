@@ -7,12 +7,11 @@ int main() {
     // Initialize logging system
     vkeng::Logger::getInstance().setLogLevel(vkeng::LogLevel::DEBUG);
 
-    LOG_INFO(GENERAL, "=== Vulkan Engine Phase 1 Test ===");
-    LOG_INFO(GENERAL, "Starting HelloTriangleApp...");
+    LOG_INFO(GENERAL, "Starting test scene...");
 
     try {
         vkeng::Config config;
-        config.window.title = "Vulkan Engine - Phase 1";
+        config.window.title = "vkeng - Test Scene";
         config.window.width = 1280;
         config.window.height = 720;
         config.window.resizable = true;
@@ -25,7 +24,6 @@ int main() {
         LOG_CRITICAL(GENERAL, "Fatal error: {}", e.what());
         return EXIT_FAILURE;
     }
-    
-    LOG_INFO(GENERAL, "=== Phase 1 Test Complete ===");
+
     return EXIT_SUCCESS;
 }

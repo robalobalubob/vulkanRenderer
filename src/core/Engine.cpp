@@ -12,11 +12,8 @@ namespace vkeng {
 
     Engine::Engine(const Config& config) : config_(config) {
         inputManager_ = std::make_unique<InputManager>();
-        physicsWorld_ = std::make_unique<PhysicsWorld>();
-        audioEngine_ = std::make_unique<AudioEngine>();
         initWindow();
         initVulkanCore();
-        audioEngine_->initialize();
     }
 
     Engine::~Engine() {
@@ -31,9 +28,6 @@ namespace vkeng {
         // Derived destructor runs FIRST, then Base destructor.
         // So App resources (Renderer, Pipeline) will be destroyed before Device/Instance.
         // This is correct.
-
-        audioEngine_.reset();
-        physicsWorld_.reset();
 
         swapChain_.reset();
         fallbackTexture_.reset();
@@ -153,13 +147,6 @@ namespace vkeng {
         swapChain_ = std::make_unique<VulkanSwapChain>(device_->getDevice(), device_->getPhysicalDevice(), surface_, width, height, memoryManager_);
     }
 
-    void Engine::onFixedUpdate(float fixedDeltaTime) {
-        // Default: step the physics world if a scene root has been set
-        if (m_sceneRoot) {
-            physicsWorld_->step(fixedDeltaTime, m_sceneRoot);
-        }
-    }
-
     void Engine::run() {
         onInit(); // Allow derived class to initialize its specific resources
 
@@ -172,18 +159,13 @@ namespace vkeng {
             time.tick();
             float dt = time.deltaTime();
 
-            // Fixed-rate updates (physics, deterministic game logic)
+            // Fixed-rate updates (deterministic logic)
             while (time.consumeFixedStep()) {
                 onFixedUpdate(time.fixedDeltaTime());
             }
 
-            // Variable-rate update (input, camera, animation, game logic)
+            // Variable-rate update (input, camera, animation)
             onUpdate(dt);
-
-            // Update spatial audio positions
-            if (m_sceneRoot) {
-                audioEngine_->update(m_sceneRoot);
-            }
 
             // Render
             onRender();

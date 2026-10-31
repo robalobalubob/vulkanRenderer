@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATHS\" | grep -qE '\\.(cpp|hpp|h)$'; then echo '🔨 Checking build...' && cmake --build build --parallel 2>&1 | tail -20; fi",
+            "timeout": 30000,
+            "description": "Auto-compile after C++ file changes to catch errors early"
+          },
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATHS\" | grep -qE '\\.(vert|frag|comp|geom|tesc|tese)$'; then for f in $(echo \"$CLAUDE_FILE_PATHS\" | tr ':' '\\n' | grep -E '\\.(vert|frag|comp|geom|tesc|tese)$'); do echo \"🔍 Validating shader: $f\" && glslc --target-env=vulkan1.2 \"$f\" -o /dev/null 2>&1; done; fi",
+            "timeout": 10000,
+            "description": "Validate GLSL shaders after modification"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cmake *)",
+      "Bash(glslc *)",
+      "Bash(./build/*)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(sudo *)"
+    ]
+  }
+}

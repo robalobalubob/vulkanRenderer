@@ -92,10 +92,6 @@ add_custom_target(prepare_runtime_content
 # ============================================================================
 
 add_library(vulkan-engine STATIC
-    # Audio subsystem
-    src/audio/AudioEngine.cpp
-    src/audio/AudioListener.cpp
-    src/audio/AudioSource.cpp
     # Components
     src/components/Light.cpp
     src/components/MeshRenderer.cpp
@@ -115,10 +111,6 @@ add_library(vulkan-engine STATIC
     src/core/VulkanSwapChain.cpp
     # Math
     src/math/Transform.cpp
-    # Physics subsystem
-    src/physics/Collider.cpp
-    src/physics/PhysicsWorld.cpp
-    src/physics/RigidBody.cpp
     # Rendering
     src/rendering/Camera.cpp
     src/rendering/CommandBuffer.cpp
@@ -143,7 +135,6 @@ add_library(vulkan-engine STATIC
     # Scene
     src/scene/RdSceneLoader.cpp
     src/scene/SceneNode.cpp
-    src/scene/SceneSerializer.cpp
 )
 
 target_include_directories(vulkan-engine
@@ -201,3 +192,31 @@ foreach(vkeng_app IN ITEMS test_scene model_viewer rd_viewer)
             vulkan-engine
     )
 endforeach()
+
+# ============================================================================
+# Render regression tests: ctest --test-dir build -C Debug
+# ============================================================================
+
+enable_testing()
+
+add_executable(compare_ppm tests/compare_ppm.cpp)
+
+function(vkeng_add_render_test test_name scene_file frame)
+    add_test(NAME render_${test_name}
+        COMMAND "${CMAKE_COMMAND}"
+            "-DRD_VIEWER=$<TARGET_FILE:rd_viewer>"
+            "-DCOMPARE_PPM=$<TARGET_FILE:compare_ppm>"
+            "-DSCENE=${CMAKE_CURRENT_SOURCE_DIR}/assets/rd/${scene_file}"
+            "-DFRAME=${frame}"
+            "-DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/${test_name}.ppm"
+            "-DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/test_output/$<CONFIG>/${test_name}.ppm"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/render_test.cmake")
+    # Each test opens a window on the same GPU, so they must not run in parallel.
+    set_tests_properties(render_${test_name} PROPERTIES RESOURCE_LOCK gpu_window TIMEOUT 120)
+endfunction()
+
+vkeng_add_render_test(coverage coverage.rd 0)
+vkeng_add_render_test(superquadrics superquadrics.rd 0)
+vkeng_add_render_test(terrain t7d2_4s123.rd 0)
+vkeng_add_render_test(neutron_static neutron_static.rd 0)
+vkeng_add_render_test(neutron_dynamic neutron_dynamic.rd 20)
