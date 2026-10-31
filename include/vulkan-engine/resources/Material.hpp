@@ -29,8 +29,9 @@ struct MaterialFactors {
     float alphaCutoff = 0.5f;
     float shininess = 32.0f;
     bool doubleSided = false;
+    /// Skip lighting entirely; base color and emissive give the final color.
+    /// Mirrors glTF's KHR_materials_unlit.
     bool unlit = false;
-    bool wireframe = false;  ///< Rasterize surfaces as edges (RD's OptionBool "Wireframe")
 };
 
 struct MaterialTextures {

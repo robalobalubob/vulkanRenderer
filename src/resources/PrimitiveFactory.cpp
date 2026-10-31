@@ -708,7 +708,7 @@ float bernsteinDerivative(int i, int n, float t) {
 
 } // namespace
 
-std::shared_ptr<Mesh> PrimitiveFactory::createRdCylinder(std::shared_ptr<MemoryManager> memoryManager,
+std::shared_ptr<Mesh> PrimitiveFactory::createCylinderZ(std::shared_ptr<MemoryManager> memoryManager,
                                                           float radius, float zMin, float zMax,
                                                           float thetaMaxDegrees,
                                                           uint32_t segments) {
@@ -748,7 +748,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createRdCylinder(std::shared_ptr<MemoryM
                                   MeshNormalSource::Authored);
 }
 
-std::shared_ptr<Mesh> PrimitiveFactory::createRdCone(std::shared_ptr<MemoryManager> memoryManager,
+std::shared_ptr<Mesh> PrimitiveFactory::createConeZ(std::shared_ptr<MemoryManager> memoryManager,
                                                       float height, float radius,
                                                       float thetaMaxDegrees,
                                                       uint32_t segments) {
@@ -791,7 +791,7 @@ std::shared_ptr<Mesh> PrimitiveFactory::createRdCone(std::shared_ptr<MemoryManag
                                   MeshNormalSource::Authored);
 }
 
-std::shared_ptr<Mesh> PrimitiveFactory::createRdDisk(std::shared_ptr<MemoryManager> memoryManager,
+std::shared_ptr<Mesh> PrimitiveFactory::createDiskZ(std::shared_ptr<MemoryManager> memoryManager,
                                                       float height, float radius,
                                                       float thetaMaxDegrees,
                                                       uint32_t segments) {

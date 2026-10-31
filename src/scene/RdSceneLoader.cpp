@@ -340,14 +340,14 @@ float maxScaleFactor(const glm::mat4& m) {
 
 std::string materialKey(const glm::vec4& baseColor, const glm::vec3& specular,
                         const glm::vec3& emissive, float shininess,
-                        bool doubleSided, bool wireframe, bool unlit) {
+                        bool doubleSided, bool unlit) {
     char buffer[200];
     std::snprintf(buffer, sizeof(buffer),
-                  "%.4f,%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.2f|%d%d%d",
+                  "%.4f,%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.2f|%d%d",
                   baseColor.r, baseColor.g, baseColor.b, baseColor.a,
                   specular.r, specular.g, specular.b,
                   emissive.r, emissive.g, emissive.b, shininess,
-                  doubleSided ? 1 : 0, wireframe ? 1 : 0, unlit ? 1 : 0);
+                  doubleSided ? 1 : 0, unlit ? 1 : 0);
     return buffer;
 }
 
@@ -883,7 +883,7 @@ void RdParser::handleGeometry(RdTokenSource& src, const std::string& cmd) {
                       radius, zMin, zMax, thetaMax, m_divisions);
         auto& mesh = m_meshCache[key];
         if (!mesh) {
-            mesh = PrimitiveFactory::createRdCylinder(m_memoryManager, radius, zMin, zMax,
+            mesh = PrimitiveFactory::createCylinderZ(m_memoryManager, radius, zMin, zMax,
                                                       thetaMax, lonSegments());
         }
         // RenderMan-style cylinders are open tubes with no end caps
@@ -899,7 +899,7 @@ void RdParser::handleGeometry(RdTokenSource& src, const std::string& cmd) {
                       height, radius, thetaMax, m_divisions);
         auto& mesh = m_meshCache[key];
         if (!mesh) {
-            mesh = PrimitiveFactory::createRdCone(m_memoryManager, height, radius,
+            mesh = PrimitiveFactory::createConeZ(m_memoryManager, height, radius,
                                                   thetaMax, lonSegments());
         }
         emitPrimitive(mesh, glm::mat4(1.0f), "cone", /*doubleSided=*/true);
@@ -914,7 +914,7 @@ void RdParser::handleGeometry(RdTokenSource& src, const std::string& cmd) {
                       height, radius, thetaMax, m_divisions);
         auto& mesh = m_meshCache[key];
         if (!mesh) {
-            mesh = PrimitiveFactory::createRdDisk(m_memoryManager, height, radius,
+            mesh = PrimitiveFactory::createDiskZ(m_memoryManager, height, radius,
                                                   thetaMax, lonSegments());
         }
         emitPrimitive(mesh, glm::mat4(1.0f), "disk");
@@ -969,7 +969,7 @@ void RdParser::handleGeometry(RdTokenSource& src, const std::string& cmd) {
         std::snprintf(key, sizeof(key), "tube|%.5f|%d", radius, m_divisions);
         auto& mesh = m_meshCache[key];
         if (!mesh) {
-            mesh = PrimitiveFactory::createRdCylinder(m_memoryManager, radius, 0.0f, 1.0f,
+            mesh = PrimitiveFactory::createCylinderZ(m_memoryManager, radius, 0.0f, 1.0f,
                                                       360.0f, lonSegments());
         }
 
@@ -1288,8 +1288,10 @@ void RdParser::flushFrame() {
         }
 
         const glm::vec4 baseColor{diffuse, s.opacity};
+        // Wireframe is not part of the key: it lives on the MeshRenderer, so
+        // solid and wireframe draws share one material.
         const std::string key = materialKey(baseColor, specular, emissive, s.specularExponent,
-                                            record.doubleSided, record.wireframe, record.unlit);
+                                            record.doubleSided, record.unlit);
         auto& material = materialCache[key];
         if (!material) {
             MaterialFactors factors;
@@ -1300,7 +1302,6 @@ void RdParser::flushFrame() {
             factors.roughnessFactor = 0.0f;  // pass the RD specular exponent through unmodified
             factors.metallicFactor = 0.0f;
             factors.doubleSided = record.doubleSided;
-            factors.wireframe = record.wireframe;
             factors.unlit = record.unlit;
             const AlphaMode alphaMode = (s.opacity < 0.999f) ? AlphaMode::Blend : AlphaMode::Opaque;
             material = std::make_shared<Material>("rd_material_" + std::to_string(materialCount++),
@@ -1314,7 +1315,8 @@ void RdParser::flushFrame() {
         node->getTransform().setPosition(position);
         node->getTransform().setRotation(rotation);
         node->getTransform().setScale(scale);
-        node->addComponent<MeshRenderer>(record.mesh, material);
+        auto renderer = node->addComponent<MeshRenderer>(record.mesh, material);
+        renderer->setWireframe(record.wireframe);
         scene.root->addChild(node);
 
         const glm::vec3 worldCenter = glm::vec3(record.xform * glm::vec4(record.mesh->getBoundsCenter(), 1.0f));

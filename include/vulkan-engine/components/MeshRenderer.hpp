@@ -93,6 +93,20 @@ namespace vkeng {
          */
         void setMaterial(std::shared_ptr<Material> material) { m_material = material; }
 
+        /**
+         * @brief Whether to rasterize this mesh's surfaces as edges.
+         *
+         * Deliberately a property of the renderer component rather than the
+         * material: wireframe is rasterizer state describing *how* to draw the
+         * mesh, not a description of its surface. Two nodes can share one
+         * material and still draw solid and wireframe respectively.
+         *
+         * Requires the fillModeNonSolid device feature; the renderer falls back
+         * to solid where it is unavailable.
+         */
+        bool isWireframe() const { return m_wireframe; }
+        void setWireframe(bool wireframe) { m_wireframe = wireframe; }
+
     private:
         // ============================================================================
         // Mesh Resource Storage
@@ -100,6 +114,7 @@ namespace vkeng {
         
         std::shared_ptr<Mesh> m_mesh;            ///< Shared mesh resource for rendering
         std::shared_ptr<Material> m_material;    ///< Optional material resource for future shading systems
+        bool m_wireframe = false;                ///< Render-state override: rasterize edges instead of faces
     };
 
 } // namespace vkeng

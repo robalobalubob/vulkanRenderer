@@ -33,13 +33,27 @@ namespace vkeng {
 
 Renderer::Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapChain,
                    std::shared_ptr<RenderPass> renderPass, PipelineManager& pipelineManager,
-                   const PipelineConfig& defaultConfig)
+                   const PipelineConfig& defaultConfig,
+                   std::shared_ptr<MemoryManager> memoryManager)
     : m_window(window), m_device(device), m_swapChain(swapChain), m_renderPass(renderPass),
-      m_pipelineManager(pipelineManager), m_defaultConfig(defaultConfig) {
+      m_pipelineManager(pipelineManager), m_defaultConfig(defaultConfig),
+      m_memoryManager(std::move(memoryManager)) {
 
     // Create command pool for allocating command buffers
     m_commandPool = std::make_unique<CommandPool>(m_device.getDevice(), m_device.getGraphicsFamily());
-    
+
+    // One material buffer per frame in flight. Capacity is fixed so the
+    // descriptor written by the app never needs rewriting as scenes change.
+    m_materialBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto result = m_memoryManager->createStorageBuffer(sizeof(GpuMaterial) * MAX_MATERIALS, true);
+        if (!result) {
+            throw std::runtime_error("Failed to create material storage buffer: " +
+                                     result.getError().message);
+        }
+        m_materialBuffers[i] = result.getValue();
+    }
+
     // Initialize all rendering resources
     createFramebuffers();    // Framebuffers for each swap chain image
     createCommandBuffers();  // Command buffers for multi-frame rendering
@@ -209,10 +223,18 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     m_drawnCount = 0;
     m_culledCount = 0;
 
-    // Collect draw calls from scene graph (deferred rendering)
+    // Collect draw calls from scene graph (deferred rendering). Materials are
+    // interned during the walk, so index 0 must be claimed first: it is the
+    // default every draw without a material falls back to.
     m_opaqueDrawCalls.clear();
     m_transparentDrawCalls.clear();
+    m_frameMaterials.clear();
+    m_materialIndices.clear();
+    internMaterial(nullptr);
     collectDrawCalls(rootNode, camera.getPosition());
+
+    // Upload before recording: the GPU reads this buffer during the draws below
+    uploadMaterials(m_currentFrame);
 
     // Sort transparent draw calls back-to-front
     std::sort(m_transparentDrawCalls.begin(), m_transparentDrawCalls.end(),
@@ -305,6 +327,48 @@ void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
 
 // --- Private Methods ---
 
+uint32_t Renderer::internMaterial(const Material* material) {
+    auto it = m_materialIndices.find(material);
+    if (it != m_materialIndices.end()) {
+        return it->second;
+    }
+
+    if (m_frameMaterials.size() >= MAX_MATERIALS) {
+        // Falling back to index 0 keeps rendering rather than corrupting the
+        // draw; the warning is what makes the cap visible instead of silent.
+        LOG_WARN(RENDERING, "Scene exceeds MAX_MATERIALS ({}); extra materials render with defaults",
+                 MAX_MATERIALS);
+        return 0;
+    }
+
+    GpuMaterial gpu{};
+    if (material) {
+        const auto& factors = material->getFactors();
+        gpu.baseColorFactor = factors.baseColorFactor;
+        gpu.emissiveAndCutoff = glm::vec4(factors.emissiveFactor, factors.alphaCutoff);
+        gpu.specularAndShininess = glm::vec4(factors.specularColor, factors.shininess);
+        gpu.pbrFactors = glm::vec4(factors.metallicFactor, factors.roughnessFactor,
+                                   factors.normalScale, factors.occlusionStrength);
+
+        uint32_t flags = 0;
+        if (factors.unlit) flags |= MaterialFlagUnlit;
+        if (material->getAlphaMode() == AlphaMode::Mask) flags |= MaterialFlagAlphaMask;
+        gpu.flags.x = flags;
+    }
+    // A null material keeps GpuMaterial's defaults: white, opaque, lit.
+
+    const uint32_t index = static_cast<uint32_t>(m_frameMaterials.size());
+    m_frameMaterials.push_back(gpu);
+    m_materialIndices.emplace(material, index);
+    return index;
+}
+
+void Renderer::uploadMaterials(size_t frameIndex) {
+    if (m_frameMaterials.empty()) return;
+    m_materialBuffers[frameIndex]->copyData(m_frameMaterials.data(),
+                                            sizeof(GpuMaterial) * m_frameMaterials.size());
+}
+
 void Renderer::collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPos) {
     if (!node.isActive()) return;
 
@@ -353,19 +417,7 @@ void Renderer::collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPo
             }
 
             if (auto material = meshRenderer->getMaterial()) {
-                const auto& factors = material->getFactors();
-                dc.pushConstants.baseColorFactor = factors.baseColorFactor;
-                // emissiveFactor.w does double duty: a positive value is the
-                // alpha-mask cutoff, and -1 flags an unlit draw (see shader.frag).
-                // Both fit in one slot because push constants are capped at the
-                // 128 bytes this struct already fills, and a material is never
-                // both alpha-masked and unlit.
-                float alphaCutoff = factors.unlit
-                    ? -1.0f
-                    : ((material->getAlphaMode() == AlphaMode::Mask) ? factors.alphaCutoff : 0.0f);
-                dc.pushConstants.emissiveFactor = glm::vec4(factors.emissiveFactor, alphaCutoff);
-                dc.pushConstants.specularColorAndShininess = glm::vec4(factors.specularColor, factors.shininess);
-                dc.pushConstants.pbrFactors = glm::vec4(factors.metallicFactor, factors.roughnessFactor, factors.normalScale, factors.occlusionStrength);
+                dc.pushConstants.materialIndex.x = internMaterial(material.get());
 
                 if (material->getDescriptorSet() != VK_NULL_HANDLE) {
                     dc.textureDescriptorSet = material->getDescriptorSet();
@@ -384,16 +436,21 @@ void Renderer::collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPo
                         break;
                 }
 
-                if (factors.doubleSided) {
+                if (material->getFactors().doubleSided) {
                     dc.cullMode = CullMode::None;
                 }
+            } else {
+                // No material: index 0 is reserved for engine defaults
+                dc.pushConstants.materialIndex.x = internMaterial(nullptr);
+            }
 
-                // Wireframe needs fillModeNonSolid. Where the device lacks it,
-                // fall back to solid rather than creating an invalid pipeline.
-                if (factors.wireframe && mesh->isSurface() && m_device.supportsNonSolidFill()) {
-                    dc.polygonMode = PolygonMode::Line;
-                    dc.cullMode = CullMode::None;  // show the back edges too
-                }
+            // Wireframe is render state on the component, not a surface
+            // property. It needs fillModeNonSolid; where the device lacks it,
+            // fall back to solid rather than creating an invalid pipeline.
+            if (meshRenderer->isWireframe() && mesh->isSurface() &&
+                m_device.supportsNonSolidFill()) {
+                dc.polygonMode = PolygonMode::Line;
+                dc.cullMode = CullMode::None;  // show the back edges too
             }
 
             // Compute distance to camera for transparent sorting
@@ -472,60 +529,25 @@ Result<void> Renderer::captureFrame(const std::string& path) {
     const VkDeviceSize bufferSize =
         static_cast<VkDeviceSize>(extent.width) * extent.height * 4;
 
-    // A raw allocation rather than the MemoryManager: the Renderer does not own
-    // one, and threading it through the constructor for a debug-only path would
-    // be a worse trade than the ~30 lines here.
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
+    // Readback goes through the MemoryManager like every other allocation, so
+    // VMA stays the single owner of device memory. TransferDst, not the staging
+    // helper: staging buffers are TRANSFER_SRC for uploads, and this is a
+    // download.
+    BufferCreateInfo readbackInfo{};
+    readbackInfo.size = bufferSize;
+    readbackInfo.usage = BufferUsage::TransferDst;
+    readbackInfo.hostVisible = true;
+    readbackInfo.debugName = "frame_capture_readback";
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = bufferSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (vkCreateBuffer(m_device.getDevice(), &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-        return Result<void>(Error("captureFrame: failed to create readback buffer"));
+    auto bufferResult = m_memoryManager->createBuffer(readbackInfo);
+    if (!bufferResult) {
+        return Result<void>(Error("captureFrame: failed to create readback buffer: " +
+                                  bufferResult.getError().message));
     }
-
-    VkMemoryRequirements memRequirements{};
-    vkGetBufferMemoryRequirements(m_device.getDevice(), buffer, &memRequirements);
-
-    VkPhysicalDeviceMemoryProperties memProperties{};
-    vkGetPhysicalDeviceMemoryProperties(m_device.getPhysicalDevice(), &memProperties);
-
-    const VkMemoryPropertyFlags wanted =
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    uint32_t memoryTypeIndex = UINT32_MAX;
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((memRequirements.memoryTypeBits & (1u << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & wanted) == wanted) {
-            memoryTypeIndex = i;
-            break;
-        }
-    }
-    if (memoryTypeIndex == UINT32_MAX) {
-        vkDestroyBuffer(m_device.getDevice(), buffer, nullptr);
-        return Result<void>(Error("captureFrame: no host-visible memory type available"));
-    }
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = memoryTypeIndex;
-    if (vkAllocateMemory(m_device.getDevice(), &allocInfo, nullptr, &memory) != VK_SUCCESS) {
-        vkDestroyBuffer(m_device.getDevice(), buffer, nullptr);
-        return Result<void>(Error("captureFrame: failed to allocate readback memory"));
-    }
-    vkBindBufferMemory(m_device.getDevice(), buffer, memory, 0);
-
-    auto cleanup = [&]() {
-        vkDestroyBuffer(m_device.getDevice(), buffer, nullptr);
-        vkFreeMemory(m_device.getDevice(), memory, nullptr);
-    };
+    auto readback = bufferResult.getValue();
 
     auto cmdResult = m_commandPool->beginSingleTimeCommands();
     if (!cmdResult) {
-        cleanup();
         return Result<void>(cmdResult.getError());
     }
     VkCommandBuffer cmd = cmdResult.getValue();
@@ -552,7 +574,8 @@ Result<void> Renderer::captureFrame(const std::string& path) {
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     region.imageOffset = {0, 0, 0};
     region.imageExtent = {extent.width, extent.height, 1};
-    vkCmdCopyImageToBuffer(cmd, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &region);
+    vkCmdCopyImageToBuffer(cmd, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           readback->getHandle(), 1, &region);
 
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -563,20 +586,18 @@ Result<void> Renderer::captureFrame(const std::string& path) {
 
     auto endResult = m_commandPool->endSingleTimeCommands(cmd, m_device.getGraphicsQueue());
     if (!endResult) {
-        cleanup();
         return Result<void>(endResult.getError());
     }
 
-    void* mapped = nullptr;
-    if (vkMapMemory(m_device.getDevice(), memory, 0, bufferSize, 0, &mapped) != VK_SUCCESS) {
-        cleanup();
-        return Result<void>(Error("captureFrame: failed to map readback memory"));
+    auto mapResult = readback->map();
+    if (!mapResult) {
+        return Result<void>(Error("captureFrame: failed to map readback buffer: " +
+                                  mapResult.getError().message));
     }
 
     std::ofstream out(path, std::ios::binary);
     if (!out.is_open()) {
-        vkUnmapMemory(m_device.getDevice(), memory);
-        cleanup();
+        readback->unmap();
         return Result<void>(Error("captureFrame: failed to open " + path));
     }
 
@@ -586,7 +607,7 @@ Result<void> Renderer::captureFrame(const std::string& path) {
                       m_swapChain.imageFormat() == VK_FORMAT_B8G8R8A8_UNORM;
 
     out << "P6\n" << extent.width << " " << extent.height << "\n255\n";
-    const auto* pixels = static_cast<const uint8_t*>(mapped);
+    const auto* pixels = static_cast<const uint8_t*>(mapResult.getValue());
     std::vector<uint8_t> row(static_cast<size_t>(extent.width) * 3);
     for (uint32_t y = 0; y < extent.height; ++y) {
         const uint8_t* src = pixels + static_cast<size_t>(y) * extent.width * 4;
@@ -599,9 +620,7 @@ Result<void> Renderer::captureFrame(const std::string& path) {
         out.write(reinterpret_cast<const char*>(row.data()), static_cast<std::streamsize>(row.size()));
     }
     out.close();
-
-    vkUnmapMemory(m_device.getDevice(), memory);
-    cleanup();
+    readback->unmap();
 
     LOG_INFO(RENDERING, "Captured frame to {} ({}x{})", path, extent.width, extent.height);
     return Result<void>();

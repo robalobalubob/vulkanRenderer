@@ -27,8 +27,10 @@
 #include "vulkan-engine/rendering/ShadowPass.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/resources/Material.hpp"
+#include "vulkan-engine/core/MemoryManager.hpp"
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 #include <chrono>
 #include <algorithm>
@@ -84,7 +86,8 @@ namespace vkeng {
          */
         Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapChain,
                  std::shared_ptr<RenderPass> renderPass, PipelineManager& pipelineManager,
-                 const PipelineConfig& defaultConfig);
+                 const PipelineConfig& defaultConfig,
+                 std::shared_ptr<MemoryManager> memoryManager);
 
         ~Renderer();
 
@@ -167,9 +170,8 @@ namespace vkeng {
         /**
          * @brief Reads the most recently presented image back and writes a PPM.
          *
-         * Writes binary PPM (P6) deliberately: it needs no image library, and it
-         * is the format RD's own `Display "PNM"` mode produced, so captures are
-         * directly comparable with rd_view output.
+         * Binary PPM (P6) so the engine takes on no image-library dependency for
+         * a debug facility. Callers that want PNG can convert.
          *
          * Idles the device and issues a one-shot copy, so this is a debugging and
          * documentation tool rather than something to call every frame.
@@ -178,6 +180,18 @@ namespace vkeng {
          * @return Ok, or an Error describing why the capture failed.
          */
         Result<void> captureFrame(const std::string& path);
+
+        /**
+         * @brief The per-frame material storage buffers, one per frame in flight.
+         *
+         * Apps bind these at set 0, binding 1 when creating their descriptor
+         * sets (see GlobalDescriptors.hpp). The renderer fills the current
+         * frame's buffer from the materials it collects while walking the
+         * scene; draws index into it via push constants.
+         */
+        const std::vector<std::shared_ptr<Buffer>>& getMaterialBuffers() const {
+            return m_materialBuffers;
+        }
 
     private:
         // ============================================================================
@@ -296,7 +310,28 @@ namespace vkeng {
         // ============================================================================
         
         uint32_t m_lastPresentedImage = 0;                  ///< Swapchain index of the last presented frame (for captureFrame)
+        std::shared_ptr<MemoryManager> m_memoryManager;     ///< Owns every buffer allocation the renderer makes
         std::unique_ptr<CommandPool> m_commandPool;         ///< Command pool for buffer allocation
+
+        // ============================================================================
+        // Material buffer
+        // ============================================================================
+
+        /// One material storage buffer per frame in flight, so filling next
+        /// frame's materials never races the GPU reading this frame's.
+        std::vector<std::shared_ptr<Buffer>> m_materialBuffers;
+
+        /// Materials collected this frame, in the order draws index them.
+        std::vector<GpuMaterial> m_frameMaterials;
+
+        /// Material pointer -> index into m_frameMaterials, rebuilt each frame.
+        std::unordered_map<const Material*, uint32_t> m_materialIndices;
+
+        /// Interns a material for this frame and returns its buffer index.
+        uint32_t internMaterial(const Material* material);
+
+        /// Uploads m_frameMaterials into the given frame's storage buffer.
+        void uploadMaterials(size_t frameIndex);
         std::vector<VkFramebuffer> m_swapChainFramebuffers; ///< Framebuffers for each swap chain image
         bool m_framebufferResized = false;                  ///< Flag indicating pending resize
         
@@ -349,7 +384,7 @@ namespace vkeng {
             BlendMode blendMode;
             CullMode cullMode;
             PrimitiveTopology topology;   ///< Taken from the mesh; selects a matching pipeline
-            PolygonMode polygonMode;      ///< Fill, or Line for wireframe materials
+            PolygonMode polygonMode;      ///< Fill, or Line when the MeshRenderer requests wireframe
             float distanceToCamera;  ///< For back-to-front sorting of transparent objects
         };
 

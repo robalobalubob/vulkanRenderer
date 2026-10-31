@@ -25,10 +25,7 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
 
 layout(push_constant) uniform PushConstants {
     mat4 modelMatrix;
-    vec4 baseColorFactor;
-    vec4 emissiveFactor;
-    vec4 specularColorAndShininess;
-    vec4 pbrFactors; // metallic(x), roughness(y), normalScale(z), occlusionStrength(w)
+    uvec4 materialIndex;  // x = index into the material buffer (fragment stage only)
 } pushConstants;
 
 layout(location = 0) in vec3 inPosition;

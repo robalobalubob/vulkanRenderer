@@ -148,16 +148,16 @@ public:
                                                          uint32_t minorSegments = 24);
 
     // ========================================================================
-    // RD-convention swept surfaces (z-up, theta clockwise around +Z from +X)
+    // Z-axis swept surfaces (theta sweeps clockwise around +Z starting from +X)
     //
-    // The generic createCylinder/createCone above are Y-up and always sweep a
-    // full circle. These mirror the RD spec's axis convention and honour
-    // partial angular extents, including the flat "pie slice" faces a partial
-    // sweep exposes.
+    // The createCylinder/createCone above sweep about the Y axis and always
+    // cover a full circle. The `...Z` variants below sweep about Z and honour
+    // partial angular extents. Both conventions are useful: Y-up suits
+    // game-style scenes, Z-up suits CAD- and RenderMan-derived data.
     // ========================================================================
 
     /**
-     * @brief Creates an RD cylinder: radius about the Z axis, spanning zMin..zMax.
+     * @brief Creates a cylinder about the Z axis, spanning zMin..zMax.
      * @param memoryManager The memory manager to use for buffer allocation.
      * @param radius Cylinder radius.
      * @param zMin Lower Z bound.
@@ -166,7 +166,7 @@ public:
      * @param segments Number of radial segments across the sweep.
      * @return A shared pointer to the created mesh.
      */
-    static std::shared_ptr<Mesh> createRdCylinder(std::shared_ptr<MemoryManager> memoryManager,
+    static std::shared_ptr<Mesh> createCylinderZ(std::shared_ptr<MemoryManager> memoryManager,
                                                    float radius, float zMin, float zMax,
                                                    float thetaMaxDegrees = 360.0f,
                                                    uint32_t segments = 48);
@@ -180,7 +180,7 @@ public:
      * @param segments Number of radial segments across the sweep.
      * @return A shared pointer to the created mesh.
      */
-    static std::shared_ptr<Mesh> createRdCone(std::shared_ptr<MemoryManager> memoryManager,
+    static std::shared_ptr<Mesh> createConeZ(std::shared_ptr<MemoryManager> memoryManager,
                                                float height, float radius,
                                                float thetaMaxDegrees = 360.0f,
                                                uint32_t segments = 48);
@@ -194,7 +194,7 @@ public:
      * @param segments Number of radial segments across the sweep.
      * @return A shared pointer to the created mesh.
      */
-    static std::shared_ptr<Mesh> createRdDisk(std::shared_ptr<MemoryManager> memoryManager,
+    static std::shared_ptr<Mesh> createDiskZ(std::shared_ptr<MemoryManager> memoryManager,
                                                float height, float radius,
                                                float thetaMaxDegrees = 360.0f,
                                                uint32_t segments = 48);

@@ -180,11 +180,13 @@ namespace vkeng {
         , m_allocation(other.m_allocation)
         , m_size(other.m_size)
         , m_hostVisible(other.m_hostVisible)
-        , m_mappedData(other.m_mappedData) {
-        
+        , m_mappedData(other.m_mappedData)
+        , m_explicitlyMapped(other.m_explicitlyMapped) {
+
         other.m_buffer = VK_NULL_HANDLE;
         other.m_allocation = VK_NULL_HANDLE;
         other.m_mappedData = nullptr;
+        other.m_explicitlyMapped = false;
     }
 
     /**
@@ -203,10 +205,12 @@ namespace vkeng {
             m_size = other.m_size;
             m_hostVisible = other.m_hostVisible;
             m_mappedData = other.m_mappedData;
-            
+            m_explicitlyMapped = other.m_explicitlyMapped;
+
             other.m_buffer = VK_NULL_HANDLE;
             other.m_allocation = VK_NULL_HANDLE;
             other.m_mappedData = nullptr;
+            other.m_explicitlyMapped = false;
         }
         return *this;
     }
@@ -232,7 +236,8 @@ namespace vkeng {
         if (result != VK_SUCCESS) {
             return Result<void*>(Error("Failed to map buffer memory", result));
         }
-        
+        m_explicitlyMapped = true;
+
         return Result<void*>(m_mappedData);
     }
 
@@ -245,9 +250,14 @@ namespace vkeng {
             return;
         }
         
-        if (m_mappedData) {
+        // Persistently mapped allocations (VMA_ALLOCATION_CREATE_MAPPED_BIT, set
+        // for every host-visible buffer) were never mapped by us, so returning
+        // that mapping would trip VMA's "unmapping allocation not previously
+        // mapped" assertion. Their pointer stays valid for the buffer's life.
+        if (m_explicitlyMapped) {
             vmaUnmapMemory(m_allocator, m_allocation);
             m_mappedData = nullptr;
+            m_explicitlyMapped = false;
         }
     }
 

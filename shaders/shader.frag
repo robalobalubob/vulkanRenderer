@@ -23,12 +23,25 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
     Light lights[MAX_LIGHTS];
 } ubo;
 
+// Boolean material properties (must match MaterialFlagBits in Uniforms.hpp)
+const uint MATERIAL_FLAG_UNLIT      = 1u;
+const uint MATERIAL_FLAG_ALPHA_MASK = 2u;
+
+struct Material {
+    vec4 baseColorFactor;
+    vec4 emissiveAndCutoff;       // rgb = emissive, a = alpha cutoff
+    vec4 specularAndShininess;    // rgb = specular color, a = shininess
+    vec4 pbrFactors;              // metallic(x), roughness(y), normalScale(z), occlusionStrength(w)
+    uvec4 flags;                  // x = MATERIAL_FLAG_* bitfield
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer MaterialBuffer {
+    Material materials[];
+} materialBuffer;
+
 layout(push_constant) uniform PushConstants {
     mat4 modelMatrix;
-    vec4 baseColorFactor;
-    vec4 emissiveFactor;
-    vec4 specularColorAndShininess;
-    vec4 pbrFactors; // metallic(x), roughness(y), normalScale(z), occlusionStrength(w)
+    uvec4 materialIndex;          // x = index into materialBuffer
 } pushConstants;
 
 layout(set = 1, binding = 0) uniform sampler2D texBaseColor;
@@ -98,7 +111,7 @@ float calculateShadow(vec4 lightSpacePos, vec3 normal, vec3 lightDir) {
     return shadow;
 }
 
-vec3 getNormal() {
+vec3 getNormal(float normalScale) {
     vec3 N = normalize(fragWorldNormal);
     vec3 T = normalize(fragWorldTangent);
     vec3 B = normalize(fragWorldBitangent);
@@ -108,7 +121,6 @@ vec3 getNormal() {
     vec3 tangentNormal = texture(texNormal, fragTexCoord).rgb * 2.0 - 1.0;
 
     // Apply normal scale to the XY components
-    float normalScale = pushConstants.pbrFactors.z;
     tangentNormal.xy *= normalScale;
     tangentNormal = normalize(tangentNormal);
 
@@ -116,31 +128,31 @@ vec3 getNormal() {
 }
 
 void main() {
+    Material material = materialBuffer.materials[pushConstants.materialIndex.x];
+
     // Sample textures
     vec4 texColor = texture(texBaseColor, fragTexCoord);
-    vec3 baseColor = fragColor * pushConstants.baseColorFactor.rgb * texColor.rgb;
-    float alpha = pushConstants.baseColorFactor.a * texColor.a;
+    vec3 baseColor = fragColor * material.baseColorFactor.rgb * texColor.rgb;
+    float alpha = material.baseColorFactor.a * texColor.a;
 
-    // Alpha mask cutoff (emissiveFactor.w carries the cutoff; 0 = disabled)
-    float alphaCutoff = pushConstants.emissiveFactor.w;
-    if (alphaCutoff > 0.0 && alpha < alphaCutoff) {
+    if ((material.flags.x & MATERIAL_FLAG_ALPHA_MASK) != 0u &&
+        alpha < material.emissiveAndCutoff.a) {
         discard;
     }
 
-    // A negative cutoff flags an unlit draw. Points, lines and curves have no
-    // surface normal to light, so RD gives them the drawing colour directly;
-    // that colour arrives as emissiveFactor * vertex colour (exactly one of the
+    // Points, lines and curves have no surface normal to light, so the drawing
+    // colour is the final colour: emissive * vertex colour (exactly one of the
     // two is white). Tone mapping still applies, so an unlit white line matches
     // a fully lit white surface instead of overshooting it.
-    if (alphaCutoff < 0.0) {
-        outColor = vec4(tonemapACES(fragColor * pushConstants.emissiveFactor.rgb), alpha);
+    if ((material.flags.x & MATERIAL_FLAG_UNLIT) != 0u) {
+        outColor = vec4(tonemapACES(fragColor * material.emissiveAndCutoff.rgb), alpha);
         return;
     }
 
-    // PBR material factors from textures and push constants
-    float metallic = pushConstants.pbrFactors.x;
-    float roughness = pushConstants.pbrFactors.y;
-    float occlusionStrength = pushConstants.pbrFactors.w;
+    // PBR material factors from textures and the material buffer
+    float metallic = material.pbrFactors.x;
+    float roughness = material.pbrFactors.y;
+    float occlusionStrength = material.pbrFactors.w;
 
     // Sample metallic-roughness texture (glTF convention: G=roughness, B=metallic)
     vec4 mrSample = texture(texMetallicRoughness, fragTexCoord);
@@ -152,10 +164,10 @@ void main() {
 
     // Sample emissive texture
     vec3 emissiveTexColor = texture(texEmissive, fragTexCoord).rgb;
-    vec3 emissive = pushConstants.emissiveFactor.rgb * emissiveTexColor;
+    vec3 emissive = material.emissiveAndCutoff.rgb * emissiveTexColor;
 
     // Get normal (with normal mapping)
-    vec3 normal = getNormal();
+    vec3 normal = getNormal(material.pbrFactors.z);
 
     // --- Debug views (bypass lighting) ---
     if (ubo.debugView.x > 1.5) {
@@ -171,8 +183,8 @@ void main() {
 
     // --- Lit shading: accumulate per-light Blinn-Phong with PBR modulation ---
     vec3 viewDir = normalize(ubo.cameraPosition.xyz - fragWorldPosition);
-    vec3 specColor = pushConstants.specularColorAndShininess.rgb;
-    float shininess = max(pushConstants.specularColorAndShininess.a, 1.0);
+    vec3 specColor = material.specularAndShininess.rgb;
+    float shininess = max(material.specularAndShininess.a, 1.0);
 
     // Metallic modulation: metallic surfaces use base color as specular, reduce diffuse
     vec3 dielectricSpecular = specColor;

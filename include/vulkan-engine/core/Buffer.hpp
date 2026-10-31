@@ -191,6 +191,10 @@ namespace vkeng {
         VkDeviceSize m_size = 0;                      ///< Buffer size in bytes
         bool m_hostVisible = false;                   ///< CPU accessibility flag
         void* m_mappedData = nullptr;                 ///< Cached mapped pointer
+        /// True only when map() called vmaMapMemory itself. Host-visible
+        /// allocations are created persistently mapped, so unmap() must not
+        /// return a mapping it never took — VMA asserts on the imbalance.
+        bool m_explicitlyMapped = false;
     };
 
     /**

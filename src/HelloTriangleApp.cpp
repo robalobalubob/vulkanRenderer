@@ -5,6 +5,7 @@
 #include "vulkan-engine/resources/MeshLoader.hpp"
 #include "vulkan-engine/resources/TextureLoader.hpp"
 #include "vulkan-engine/resources/ResourceManager.hpp"
+#include "vulkan-engine/rendering/GlobalDescriptors.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/components/Light.hpp"
@@ -91,13 +92,6 @@ std::filesystem::path resolveAssetBasePath(const std::string& configuredPath) {
 }
 } // namespace
 
-// Helper function declarations
-void createUboSetLayout(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout);
-void createDescriptorPool(VkDevice device, uint32_t frameCount, VkDescriptorPool* descriptorPool);
-void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool descriptorPool,
-                          VkDescriptorSetLayout descriptorSetLayout, const std::vector<std::shared_ptr<Buffer>>& uniformBuffers,
-                          std::vector<VkDescriptorSet>& descriptorSets);
-
 HelloTriangleApp::HelloTriangleApp(const Config& config) : Engine(config) {
     // Engine constructor handles core initialization
 }
@@ -153,7 +147,7 @@ void HelloTriangleApp::initRenderingPipeline() {
     });
 
     // 4. Create UBO descriptor set layout (set 0) and PipelineManager (with shadow set layout)
-    createUboSetLayout(device_->getDevice(), &descriptorSetLayout_);
+    descriptorSetLayout_ = createGlobalSetLayout(device_->getDevice());
     pipelineManager_ = std::make_unique<PipelineManager>(device_->getDevice(), descriptorSetLayout_, textureSetLayout_->getHandle(), shadowSetLayout_->getHandle());
 
     // 4. Configure default pipeline
@@ -181,11 +175,14 @@ void HelloTriangleApp::initRenderingPipeline() {
         uniformBuffers_[i] = bufferResult.getValue();
     }
 
-    createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
-    createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+    // 6. Create Renderer. It owns the material buffers, so it must exist before
+    //    the descriptor sets that reference them.
+    renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, *pipelineManager_, defaultPipelineConfig_, memoryManager_);
 
-    // 6. Create Renderer
-    renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, *pipelineManager_, defaultPipelineConfig_);
+    descriptorPool_ = createGlobalDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
+    createGlobalDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT,
+                               descriptorPool_, descriptorSetLayout_, uniformBuffers_,
+                               renderer_->getMaterialBuffers(), descriptorSets_);
 
     // 7. Create fallback texture descriptor set (all 5 PBR slots filled with identity textures)
     {
@@ -258,8 +255,10 @@ void HelloTriangleApp::recreateResources(uint32_t width, uint32_t height) {
         uniformBuffers_[i] = bufferResult.getValue();
     }
 
-    createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
-    createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+    descriptorPool_ = createGlobalDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
+    createGlobalDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT,
+                               descriptorPool_, descriptorSetLayout_, uniformBuffers_,
+                               renderer_->getMaterialBuffers(), descriptorSets_);
 
     // 4. Update Renderer
     renderer_->setRenderPass(renderPass_);
@@ -407,70 +406,5 @@ void HelloTriangleApp::onRender() {
 }
 
 // --- Helper Implementations ---
-void createUboSetLayout(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout) {
-    VkDescriptorSetLayoutBinding uboLayoutBinding{};
-    uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBinding;
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor set layout!");
-    }
-}
-
-void createDescriptorPool(VkDevice device, uint32_t frameCount, VkDescriptorPool* descriptorPool) {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = frameCount;
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = frameCount;
-
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, descriptorPool) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor pool!");
-    }
-}
-
-void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool descriptorPool,
-                          VkDescriptorSetLayout descriptorSetLayout, const std::vector<std::shared_ptr<Buffer>>& uniformBuffers,
-                          std::vector<VkDescriptorSet>& descriptorSets) {
-    std::vector<VkDescriptorSetLayout> layouts(frameCount, descriptorSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = frameCount;
-    allocInfo.pSetLayouts = layouts.data();
-
-    descriptorSets.resize(frameCount);
-    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate descriptor sets!");
-    }
-
-    for (size_t i = 0; i < frameCount; i++) {
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i]->getHandle();
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(GlobalUbo);
-
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
-
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
-    }
-}
 
 } // namespace vkeng

@@ -1,4 +1,5 @@
 #include "vulkan-engine/examples/RdViewerApp.hpp"
+#include "vulkan-engine/rendering/GlobalDescriptors.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/core/InputManager.hpp"
@@ -38,76 +39,6 @@ std::filesystem::path resolveShaderPath(const std::string& configuredPath, const
     }
     return requestedPath;
 }
-} // namespace
-
-namespace {
-
-void createUboSetLayout(VkDevice device, VkDescriptorSetLayout* descriptorSetLayout) {
-    VkDescriptorSetLayoutBinding uboLayoutBinding{};
-    uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBinding;
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor set layout!");
-    }
-}
-
-void createDescriptorPool(VkDevice device, uint32_t frameCount, VkDescriptorPool* descriptorPool) {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = frameCount;
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = frameCount;
-
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, descriptorPool) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create descriptor pool!");
-    }
-}
-
-void createDescriptorSets(VkDevice device, uint32_t frameCount, VkDescriptorPool descriptorPool,
-                          VkDescriptorSetLayout descriptorSetLayout, const std::vector<std::shared_ptr<Buffer>>& uniformBuffers,
-                          std::vector<VkDescriptorSet>& descriptorSets) {
-    std::vector<VkDescriptorSetLayout> layouts(frameCount, descriptorSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = frameCount;
-    allocInfo.pSetLayouts = layouts.data();
-
-    descriptorSets.resize(frameCount);
-    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate descriptor sets!");
-    }
-
-    for (size_t i = 0; i < frameCount; i++) {
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i]->getHandle();
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(GlobalUbo);
-
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
-
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
-    }
-}
-
 } // namespace
 
 RdViewerApp::RdViewerApp(const Config& config, std::string rdFilePath)
@@ -160,8 +91,8 @@ void RdViewerApp::initRenderingPipeline() {
         {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
     });
 
-    // 4. Create UBO descriptor set layout (set 0) and PipelineManager
-    createUboSetLayout(device_->getDevice(), &descriptorSetLayout_);
+    // 4. Create global descriptor set layout (set 0) and PipelineManager
+    descriptorSetLayout_ = createGlobalSetLayout(device_->getDevice());
     pipelineManager_ = std::make_unique<PipelineManager>(device_->getDevice(), descriptorSetLayout_, textureSetLayout_->getHandle(), shadowSetLayout_->getHandle());
 
     defaultPipelineConfig_.vertShaderPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
@@ -171,7 +102,7 @@ void RdViewerApp::initRenderingPipeline() {
     defaultPipelineConfig_.depthWriteEnable = true;
     defaultPipelineConfig_.depthTestEnable = true;
 
-    // 5. Create UBOs and descriptor sets
+    // 5. Create UBOs
     uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
     for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
         auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
@@ -179,11 +110,14 @@ void RdViewerApp::initRenderingPipeline() {
         uniformBuffers_[i] = bufferResult.getValue();
     }
 
-    createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
-    createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+    // 6. Create Renderer. It owns the material buffers, so it must exist before
+    //    the descriptor sets that reference them.
+    renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, *pipelineManager_, defaultPipelineConfig_, memoryManager_);
 
-    // 6. Create Renderer
-    renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, *pipelineManager_, defaultPipelineConfig_);
+    descriptorPool_ = createGlobalDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
+    createGlobalDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT,
+                               descriptorPool_, descriptorSetLayout_, uniformBuffers_,
+                               renderer_->getMaterialBuffers(), descriptorSets_);
 
     // 7. Fallback texture descriptor set (RD materials are untextured)
     {
@@ -248,8 +182,10 @@ void RdViewerApp::recreateResources(uint32_t width, uint32_t height) {
         uniformBuffers_[i] = bufferResult.getValue();
     }
 
-    createDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, &descriptorPool_);
-    createDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT, descriptorPool_, descriptorSetLayout_, uniformBuffers_, descriptorSets_);
+    descriptorPool_ = createGlobalDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
+    createGlobalDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT,
+                               descriptorPool_, descriptorSetLayout_, uniformBuffers_,
+                               renderer_->getMaterialBuffers(), descriptorSets_);
 
     renderer_->setRenderPass(renderPass_);
 }
@@ -302,7 +238,6 @@ void RdViewerApp::showFrame(size_t index) {
 
     const RdScene& scene = currentScene();
     rootNode_ = scene.root;
-    setSceneRoot(rootNode_.get());
 
     // Lighting is per-frame in RD ("all lighting information is lost at the end
     // of a frame block"), so the global ambient and background follow the frame.
