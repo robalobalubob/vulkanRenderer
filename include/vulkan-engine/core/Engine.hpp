@@ -9,8 +9,10 @@
  * Key Engine Responsibilities:
  * - Window creation and management via GLFW
  * - Vulkan instance, device, and swapchain initialization
- * - Main game loop with update/render separation
+ * - The Renderer, which owns all rendering resources
+ * - Main loop with update/render separation
  * - Input management
+ * - Frame capture for automated tests
  */
 
 #pragma once
@@ -25,6 +27,7 @@
 #include "vulkan-engine/core/Logger.hpp"
 #include "vulkan-engine/core/Time.hpp"
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
+#include "vulkan-engine/rendering/Renderer.hpp"
 #include "vulkan-engine/resources/Texture.hpp"
 
 #include <GLFW/glfw3.h>
@@ -42,8 +45,8 @@ namespace vkeng {
      * implement the lifecycle hooks (onInit, onUpdate, onRender, onShutdown).
      * 
      * Engine Architecture:
-     * - Initialize: Window, Vulkan instance, device, memory manager, swapchain
-     * - Game Loop: Poll events -> Update -> Render -> Present
+     * - Initialize: Window, Vulkan instance, device, memory manager, swapchain, renderer
+     * - Main Loop: Poll events -> Update -> Render -> Present
      * - Shutdown: Clean up in reverse order
      * 
      * @note Derived classes must implement all pure virtual lifecycle methods
@@ -55,8 +58,9 @@ namespace vkeng {
          * @brief Constructs the engine with the given configuration
          * @param config Configuration settings for window and engine behavior
          * 
-         * Initializes GLFW, creates input manager, but does NOT initialize Vulkan.
-         * Call run() to start the engine which handles full initialization.
+         * Initializes GLFW, the input manager, Vulkan and the renderer, so
+         * derived classes can use them from onInit() onward. Call run() to
+         * start the main loop.
          */
         Engine(const Config& config);
         
@@ -76,14 +80,25 @@ namespace vkeng {
          * @brief Starts the engine and enters the main loop
          * 
          * This method:
-         * 1. Calls initWindow() and initVulkanCore()
-         * 2. Calls derived class onInit()
-         * 3. Enters main loop calling onUpdate() and onRender()
-         * 4. Calls onShutdown() when window closes
+         * 1. Calls derived class onInit()
+         * 2. Enters main loop calling onUpdate() and onRender()
+         * 3. Waits for the GPU to go idle, then calls onShutdown() when the window closes
          */
         void run();
 
+        /**
+         * @brief Renders a few frames, writes the result as a PPM, then exits.
+         * @param outputPath Destination file path.
+         *
+         * Used to capture images without a person at the keyboard. Call before run().
+         */
+        void requestCapture(std::string outputPath) { capturePath_ = std::move(outputPath); }
+
     protected:
+        /** @brief Whether this run will capture a frame and exit. */
+        bool isCapturing() const { return !capturePath_.empty(); }
+
+
         /**
          * @brief Asks the main loop to stop after the current frame.
          *
@@ -99,8 +114,8 @@ namespace vkeng {
         /**
          * @brief Called once after Vulkan initialization
          * 
-         * Derived classes should create their rendering resources here:
-         * render passes, pipelines, buffers, textures, scene graph, etc.
+         * Derived classes should build their scene here: meshes, materials,
+         * lights, and the camera. renderer_ is already available.
          */
         virtual void onInit() = 0;
         
@@ -108,8 +123,7 @@ namespace vkeng {
          * @brief Called each frame with the time since last frame
          * @param deltaTime Time in seconds since last update
          *
-         * Derived classes should update game logic, animations,
-         * and camera movement here.
+         * Derived classes should update animations and camera movement here.
          */
         virtual void onUpdate(float deltaTime) = 0;
 
@@ -125,17 +139,17 @@ namespace vkeng {
         
         /**
          * @brief Called each frame for rendering
-         * 
-         * Derived classes should record and submit rendering commands here.
-         * The swapchain presentation is handled by this method.
+         *
+         * Derived classes should call renderer_->drawFrame() here with their
+         * scene and camera.
          */
         virtual void onRender() = 0;
-        
+
         /**
-         * @brief Called once before engine shutdown
-         * 
+         * @brief Called once before engine shutdown, with the GPU idle
+         *
          * Derived classes should clean up their application-specific
-         * resources here. Vulkan core resources are cleaned up by Engine.
+         * resources here. The renderer and Vulkan core are cleaned up by Engine.
          */
         virtual void onShutdown() = 0;
 
@@ -159,6 +173,13 @@ namespace vkeng {
          */
         void initVulkanCore();
 
+        /**
+         * @brief Creates the Renderer from the configured shaders.
+         *
+         * Must be called after initVulkanCore().
+         */
+        void initRenderer();
+
         // ============================================================================
         // Core Systems - Available to derived classes
         // ============================================================================
@@ -174,9 +195,13 @@ namespace vkeng {
         std::shared_ptr<Texture> fallbackTexture_;      ///< 1x1 white fallback for unbound texture slots
         std::shared_ptr<Texture> fallbackNormalTexture_;  ///< 1x1 flat normal (128,128,255,255) for normal map slots
         std::shared_ptr<Texture> fallbackMRTexture_;      ///< 1x1 default metallic-roughness (0, roughness=0.5) for MR slots
-        bool exitRequested_ = false;                  ///< Set by requestExit() to end the main loop
+        std::unique_ptr<Renderer> renderer_;            ///< Draws frames; owns all rendering resources
+        std::string capturePath_;                       ///< Set by requestCapture(); empty means no capture
+        bool exitRequested_ = false;                ///< Set by requestExit() to end the main loop
 
     private:
+        static constexpr uint32_t CAPTURE_WARMUP_FRAMES = 10; ///< Frames rendered before a capture
+
         /**
          * @brief GLFW error callback for debugging
          * @param error Error code from GLFW

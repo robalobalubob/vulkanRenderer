@@ -1,4 +1,4 @@
-#include "vulkan-engine/examples/HelloTriangleApp.hpp"
+#include "vulkan-engine/examples/TestSceneApp.hpp"
 #include "vulkan-engine/core/Logger.hpp"
 #include "vulkan-engine/core/Config.hpp"
 #include <iostream>
@@ -17,7 +17,7 @@ int main() {
         config.window.resizable = true;
 
         LOG_INFO(GENERAL, "Initializing Vulkan systems...");
-        vkeng::HelloTriangleApp app(config);
+        vkeng::TestSceneApp app(config);
         app.run();
         LOG_INFO(GENERAL, "Application completed successfully!");
     } catch (const std::exception& e) {

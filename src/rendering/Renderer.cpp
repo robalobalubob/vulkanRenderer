@@ -14,9 +14,11 @@
 #include "vulkan-engine/rendering/Camera.hpp"
 #include "vulkan-engine/resources/Mesh.hpp"
 #include "vulkan-engine/resources/Material.hpp"
+#include "vulkan-engine/resources/Texture.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/core/Buffer.hpp"
 #include "vulkan-engine/rendering/CommandPool.hpp"
+#include "vulkan-engine/rendering/GlobalDescriptors.hpp"
 #include "vulkan-engine/core/Logger.hpp"
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -32,29 +34,22 @@ namespace vkeng {
 // ============================================================================
 
 Renderer::Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapChain,
-                   std::shared_ptr<RenderPass> renderPass, PipelineManager& pipelineManager,
-                   const PipelineConfig& defaultConfig,
-                   std::shared_ptr<MemoryManager> memoryManager)
-    : m_window(window), m_device(device), m_swapChain(swapChain), m_renderPass(renderPass),
-      m_pipelineManager(pipelineManager), m_defaultConfig(defaultConfig),
-      m_memoryManager(std::move(memoryManager)) {
+                   std::shared_ptr<MemoryManager> memoryManager,
+                   const ShaderPaths& shaders,
+                   const Material::FallbackTextures& fallbacks)
+    : m_window(window), m_device(device), m_swapChain(swapChain),
+      m_memoryManager(std::move(memoryManager)), m_fallbacks(fallbacks) {
 
     // Create command pool for allocating command buffers
     m_commandPool = std::make_unique<CommandPool>(m_device.getDevice(), m_device.getGraphicsFamily());
 
-    // One material buffer per frame in flight. Capacity is fixed so the
-    // descriptor written by the app never needs rewriting as scenes change.
-    m_materialBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        auto result = m_memoryManager->createStorageBuffer(sizeof(GpuMaterial) * MAX_MATERIALS, true);
-        if (!result) {
-            throw std::runtime_error("Failed to create material storage buffer: " +
-                                     result.getError().message);
-        }
-        m_materialBuffers[i] = result.getValue();
-    }
+    m_renderPass = std::make_unique<RenderPass>(m_device.getDevice(), m_swapChain.imageFormat(), m_swapChain.depthFormat());
 
     // Initialize all rendering resources
+    createPipelineResources(shaders);
+    createFrameResources();
+    createFallbackDescriptorSet();
+    createShadowResources();
     createFramebuffers();    // Framebuffers for each swap chain image
     createCommandBuffers();  // Command buffers for multi-frame rendering
     createSyncObjects();     // Synchronization primitives for frame coordination
@@ -74,7 +69,8 @@ Renderer::Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapC
 /**
  * @brief Destroys renderer and cleans up all Vulkan resources
  * 
- * Ensures proper cleanup of framebuffers and synchronization objects.
+ * Ensures proper cleanup of framebuffers and synchronization objects, then
+ * releases pipelines before the descriptor layouts they were created from.
  * Command pool cleanup is handled automatically by the unique_ptr.
  */
 Renderer::~Renderer() {
@@ -86,6 +82,121 @@ Renderer::~Renderer() {
         vkDestroyFence(m_device.getDevice(), frame.inFlightFence, nullptr);
     }
     destroyRenderFinishedSemaphores();
+
+    m_shadowPass.reset();
+    m_pipelineManager.reset();
+    m_materialDescriptorPool.reset();
+    m_textureSetLayout.reset();
+    m_shadowSetLayout.reset();
+
+    if (m_globalDescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(m_device.getDevice(), m_globalDescriptorPool, nullptr);
+    }
+    if (m_globalSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(m_device.getDevice(), m_globalSetLayout, nullptr);
+    }
+}
+
+// ============================================================================
+// Resource Creation
+// ============================================================================
+
+void Renderer::createPipelineResources(const ShaderPaths& shaders) {
+    // Set 1: per-material textures, plus the pool their sets come from
+    m_textureSetLayout = DescriptorManager::get().createCombinedLayout({
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // baseColor
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // normal
+        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // metallicRoughness
+        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // occlusion
+        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // emissive
+    });
+    m_materialDescriptorPool = DescriptorManager::get().createPool(32);
+
+    // Set 2: the shadow map, one comparison sampler
+    m_shadowSetLayout = DescriptorManager::get().createCombinedLayout({
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
+    });
+
+    // Set 0: per-frame globals
+    m_globalSetLayout = createGlobalSetLayout(m_device.getDevice());
+
+    m_pipelineManager = std::make_unique<PipelineManager>(m_device.getDevice(), m_globalSetLayout,
+                                                          m_textureSetLayout->getHandle(),
+                                                          m_shadowSetLayout->getHandle());
+
+    m_defaultConfig.vertShaderPath = shaders.vertex;
+    m_defaultConfig.fragShaderPath = shaders.fragment;
+    m_defaultConfig.blendMode = BlendMode::Opaque;
+    m_defaultConfig.cullMode = CullMode::Back;
+    m_defaultConfig.depthWriteEnable = true;
+    m_defaultConfig.depthTestEnable = true;
+
+    // Shadow pipeline: depth-only, front-face cull (reduces peter-panning)
+    m_shadowConfig.vertShaderPath = shaders.shadowVertex;
+    m_shadowConfig.fragShaderPath = shaders.shadowFragment;
+    m_shadowConfig.blendMode = BlendMode::Opaque;
+    m_shadowConfig.cullMode = CullMode::Front;
+    m_shadowConfig.depthWriteEnable = true;
+    m_shadowConfig.depthTestEnable = true;
+    m_shadowConfig.depthOnly = true;
+}
+
+void Renderer::createFrameResources() {
+    m_uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto result = m_memoryManager->createUniformBuffer(sizeof(GlobalUbo));
+        if (!result) {
+            throw std::runtime_error("Failed to create uniform buffer: " + result.getError().message);
+        }
+        m_uniformBuffers[i] = result.getValue();
+    }
+
+    // One material buffer per frame in flight. Capacity is fixed so the
+    // descriptor written below never needs rewriting as scenes change.
+    m_materialBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto result = m_memoryManager->createStorageBuffer(sizeof(GpuMaterial) * MAX_MATERIALS, true);
+        if (!result) {
+            throw std::runtime_error("Failed to create material storage buffer: " +
+                                     result.getError().message);
+        }
+        m_materialBuffers[i] = result.getValue();
+    }
+
+    m_globalDescriptorPool = createGlobalDescriptorPool(m_device.getDevice(), MAX_FRAMES_IN_FLIGHT);
+    createGlobalDescriptorSets(m_device.getDevice(), MAX_FRAMES_IN_FLIGHT,
+                               m_globalDescriptorPool, m_globalSetLayout, m_uniformBuffers,
+                               m_materialBuffers, m_globalDescriptorSets);
+}
+
+void Renderer::createFallbackDescriptorSet() {
+    auto setResult = m_materialDescriptorPool->allocateDescriptorSet(m_textureSetLayout);
+    if (!setResult) throw std::runtime_error("Failed to allocate fallback texture descriptor set");
+    m_fallbackTextureDescriptorSet = setResult.getValue();
+
+    DescriptorSet fallbackDescSet(m_device.getDevice(), m_fallbackTextureDescriptorSet, m_textureSetLayout);
+    fallbackDescSet.writeImage(0, m_fallbacks.white->getImage(), m_fallbacks.white->getSampler());
+    fallbackDescSet.writeImage(1, m_fallbacks.flatNormal->getImage(), m_fallbacks.flatNormal->getSampler());
+    fallbackDescSet.writeImage(2, m_fallbacks.metallicRoughness->getImage(), m_fallbacks.metallicRoughness->getSampler());
+    fallbackDescSet.writeImage(3, m_fallbacks.white->getImage(), m_fallbacks.white->getSampler());
+    fallbackDescSet.writeImage(4, m_fallbacks.white->getImage(), m_fallbacks.white->getSampler());
+    fallbackDescSet.update();
+}
+
+void Renderer::createShadowResources() {
+    m_shadowPass = std::make_unique<ShadowPass>(m_device.getDevice(), m_device.getPhysicalDevice(), m_memoryManager);
+
+    auto setResult = m_materialDescriptorPool->allocateDescriptorSet(m_shadowSetLayout);
+    if (!setResult) throw std::runtime_error("Failed to allocate shadow descriptor set");
+    m_shadowDescriptorSet = setResult.getValue();
+
+    DescriptorSet shadowDescSet(m_device.getDevice(), m_shadowDescriptorSet, m_shadowSetLayout);
+    shadowDescSet.writeImage(0, m_shadowPass->getDepthImage(), m_shadowPass->getSampler(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    shadowDescSet.update();
+}
+
+void Renderer::createMaterialDescriptors(Material& material) {
+    material.createDescriptorSet(m_device.getDevice(), m_materialDescriptorPool, m_textureSetLayout, m_fallbacks);
 }
 
 // ============================================================================
@@ -106,12 +217,8 @@ Renderer::~Renderer() {
  * 
  * @param rootNode Root of the scene graph hierarchy to render
  * @param camera Camera providing view and projection matrices
- * @param descriptorSets Per-frame descriptor sets for shader resources
- * @param uniformBuffers Per-frame uniform buffers for shader constants
  */
-void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
-                         const std::vector<VkDescriptorSet>& descriptorSets,
-                         const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
+void Renderer::drawFrame(SceneNode& rootNode, Camera& camera) {
 
     // Check for resize by polling (WSL2/WSLg workaround - callbacks may not fire)
     int currentWidth, currentHeight;
@@ -155,7 +262,7 @@ void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
     //    telling it to draw to the acquired SWAPCHAIN IMAGE.
     vkResetFences(m_device.getDevice(), 1, &frame.inFlightFence);
     vkResetCommandBuffer(frame.commandBuffer, 0);
-    recordCommandBuffer(frame.commandBuffer, imageIndex, rootNode, camera, descriptorSets, uniformBuffers);
+    recordCommandBuffer(frame.commandBuffer, imageIndex, rootNode, camera);
 
     // 4. Submit the command buffer for the CURRENT FRAME IN FLIGHT.
     VkSubmitInfo submitInfo{};
@@ -205,9 +312,7 @@ void Renderer::drawFrame(SceneNode& rootNode, Camera& camera,
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& rootNode, Camera& camera,
-                                 const std::vector<VkDescriptorSet>& descriptorSets,
-                                 const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
+void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& rootNode, Camera& camera) {
     // Collect lights from the scene graph (before UBO upload)
     m_collectedLights.clear();
     collectLights(rootNode, m_collectedLights);
@@ -216,7 +321,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     m_lightSpaceMatrix = computeLightSpaceMatrix(rootNode);
 
     // Use m_currentFrame (not imageIndex) for per-frame resources.
-    updateGlobalUbo(m_currentFrame, camera, uniformBuffers);
+    updateGlobalUbo(m_currentFrame, camera);
 
     // Extract frustum planes once per frame for culling during scene traversal
     m_frustum = camera.getFrustum();
@@ -250,7 +355,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
 
     // ---- Pass 1: Shadow pass (depth-only) ----
     if (m_shadowPass) {
-        recordShadowPass(commandBuffer, descriptorSets[m_currentFrame]);
+        recordShadowPass(commandBuffer, m_globalDescriptorSets[m_currentFrame]);
     }
 
     // ---- Pass 2: Main render pass ----
@@ -288,8 +393,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Bind global UBO descriptor set (set 0)
-    VkPipelineLayout layout = m_pipelineManager.getLayout();
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &descriptorSets[m_currentFrame], 0, nullptr);
+    VkPipelineLayout layout = m_pipelineManager->getLayout();
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &m_globalDescriptorSets[m_currentFrame], 0, nullptr);
 
     // Bind shadow map descriptor set (set 2) if available
     if (m_shadowPass && m_shadowDescriptorSet != VK_NULL_HANDLE) {
@@ -305,8 +410,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     }
 }
 
-void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
-                                 const std::vector<std::shared_ptr<Buffer>>& uniformBuffers) {
+void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera) {
     GlobalUbo ubo{};
     ubo.view = camera.getViewMatrix();
     ubo.proj = camera.getProjectionMatrix();
@@ -322,7 +426,7 @@ void Renderer::updateGlobalUbo(uint32_t currentImage, Camera& camera,
         ubo.lights[i] = m_collectedLights[i];
     }
 
-    uniformBuffers[currentImage]->copyData(&ubo, sizeof(ubo));
+    m_uniformBuffers[currentImage]->copyData(&ubo, sizeof(ubo));
 }
 
 // --- Private Methods ---
@@ -472,7 +576,7 @@ void Renderer::collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPo
 
 void Renderer::issueDrawCalls(VkCommandBuffer commandBuffer) {
     VkExtent2D extent = m_swapChain.extent();
-    VkPipelineLayout layout = m_pipelineManager.getLayout();
+    VkPipelineLayout layout = m_pipelineManager->getLayout();
     VkPipeline lastBoundPipeline = VK_NULL_HANDLE;
 
     auto issueBatch = [&](const std::vector<DrawCall>& drawCalls) {
@@ -488,7 +592,7 @@ void Renderer::issueDrawCalls(VkCommandBuffer commandBuffer) {
                 config.depthWriteEnable = false;
             }
 
-            auto pipeline = m_pipelineManager.getPipeline(config, m_renderPass->get(), extent);
+            auto pipeline = m_pipelineManager->getPipeline(config, m_renderPass->get(), extent);
             VkPipeline vkPipeline = pipeline->getPipeline();
 
             // Only rebind pipeline if it changed
@@ -626,12 +730,6 @@ Result<void> Renderer::captureFrame(const std::string& path) {
     return Result<void>();
 }
 
-// Legacy renderNode for backward compatibility (delegates to collectDrawCalls)
-void Renderer::renderNode(VkCommandBuffer /*commandBuffer*/, const SceneNode& /*node*/) {
-    // No longer used — draw calls are collected via collectDrawCalls() and issued via issueDrawCalls()
-}
-
-
 void Renderer::collectLights(const SceneNode& root, std::vector<GpuLight>& outLights) {
     if (!root.isActive()) return;
     if (outLights.size() >= MAX_LIGHTS) return;
@@ -768,10 +866,11 @@ void Renderer::recreateSwapChain(Camera& camera) {
     LOG_INFO(VULKAN, "SwapChain recreated: {}x{} (requested {}x{})", 
              extent.width, extent.height, width, height);
 
-    if (m_recreateCallback) {
-        m_recreateCallback(extent.width, extent.height);
-    }
-    
+    // The render pass references the swapchain formats and pipelines reference
+    // the render pass. The on-disk PipelineCache survives invalidation.
+    m_pipelineManager->invalidateAll();
+    m_renderPass = std::make_unique<RenderPass>(m_device.getDevice(), m_swapChain.imageFormat(), m_swapChain.depthFormat());
+
     // Update camera aspect ratio using swapchain extent (source of truth)
     if (camera.getType() == CameraType::Perspective) {
         auto& perspectiveCamera = static_cast<PerspectiveCamera&>(camera);
@@ -867,11 +966,11 @@ void Renderer::recordShadowPass(VkCommandBuffer commandBuffer, VkDescriptorSet u
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Get shadow pipeline (depth-only, front-face culling to reduce peter-panning)
-    auto shadowPipeline = m_pipelineManager.getPipeline(
+    auto shadowPipeline = m_pipelineManager->getPipeline(
         m_shadowConfig, m_shadowPass->getRenderPass(), shadowExtent);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline->getPipeline());
 
-    VkPipelineLayout layout = m_pipelineManager.getLayout();
+    VkPipelineLayout layout = m_pipelineManager->getLayout();
 
     // Bind UBO descriptor set (set 0) — shadow.vert reads lightSpaceMatrix from here
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,

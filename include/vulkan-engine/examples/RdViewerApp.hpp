@@ -2,19 +2,12 @@
 
 #include "vulkan-engine/core/Engine.hpp"
 #include "vulkan-engine/rendering/CameraController.hpp"
-#include "vulkan-engine/rendering/Pipeline.hpp"
-#include "vulkan-engine/rendering/PipelineManager.hpp"
-#include "vulkan-engine/rendering/Renderer.hpp"
-#include "vulkan-engine/rendering/ShadowPass.hpp"
-#include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/scene/RdSceneLoader.hpp"
 #include "vulkan-engine/scene/SceneNode.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
-#include "vulkan-engine/core/Buffer.hpp"
 
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace vkeng {
 
@@ -38,16 +31,10 @@ namespace vkeng {
         ~RdViewerApp() override;
 
         /**
-         * @brief Renders a fixed number of frames, writes a PPM, then exits.
-         *
-         * Used to capture reference images without a human at the keyboard. When
-         * @p frameIndex is set, that animation frame is shown instead of playing
-         * back from the start.
+         * @brief Selects which animation frame requestCapture() captures.
+         * @param frameIndex Frame to show instead of playing back from the start.
          */
-        void setCaptureRequest(std::string outputPath, int frameIndex = -1) {
-            capturePath_ = std::move(outputPath);
-            captureFrameIndex_ = frameIndex;
-        }
+        void setCaptureFrame(int frameIndex) { captureFrameIndex_ = frameIndex; }
 
     protected:
         void onInit() override;
@@ -56,9 +43,7 @@ namespace vkeng {
         void onShutdown() override;
 
     private:
-        void initRenderingPipeline();
         void initScene();
-        void recreateResources(uint32_t width, uint32_t height);
         void applyAuthoredView();
 
         /** @brief The frame currently being displayed. */
@@ -84,42 +69,16 @@ namespace vkeng {
         float frameTimer_ = 0.0f;
 
         std::shared_ptr<SceneNode> rootNode_{};
-        std::vector<std::shared_ptr<Buffer>> uniformBuffers_{};
-        VkDescriptorSetLayout descriptorSetLayout_{};
-        VkDescriptorPool descriptorPool_{};
-        std::vector<VkDescriptorSet> descriptorSets_{};
-        std::shared_ptr<DescriptorSetLayout> textureSetLayout_{};
-        std::shared_ptr<DescriptorPool> materialDescriptorPool_{};
-        VkDescriptorSet fallbackTextureDescriptorSet_{};
 
         // ============================================================================
-        // Vulkan Rendering Pipeline
+        // Camera System
         // ============================================================================
 
-        std::shared_ptr<RenderPass>         renderPass_{};
-        std::unique_ptr<PipelineManager>    pipelineManager_{};
-        PipelineConfig                      defaultPipelineConfig_{};
-
-        // Shadow mapping
-        std::unique_ptr<ShadowPass>         shadowPass_{};
-        std::shared_ptr<DescriptorSetLayout> shadowSetLayout_{};
-        VkDescriptorSet                     shadowDescriptorSet_{};
-        PipelineConfig                      shadowPipelineConfig_{};
-
-        // ============================================================================
-        // Rendering and Camera System
-        // ============================================================================
-
-        std::unique_ptr<Renderer> renderer_{};
         std::shared_ptr<CameraController> cameraController_{};  ///< Null until the user starts flying
         std::unique_ptr<PerspectiveCamera> camera_{};
         bool isOrbitController_ = false;
 
-        uint32_t frameCount_ = 0;
-
-        // Headless capture
-        std::string capturePath_;
-        int captureFrameIndex_ = -1;
+        int captureFrameIndex_ = -1;   ///< Animation frame to capture; negative means the first
     };
 
 } // namespace vkeng

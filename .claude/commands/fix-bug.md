@@ -4,7 +4,7 @@ Fix the known engine bug described by: `$ARGUMENTS`
 
 1. **Identify the bug** — look up the relevant bug in CLAUDE.md's "Known Bugs" section. If the argument is a number, use that bug number. If it's a description, match it to the closest known issue.
 
-2. **Find all affected code** — search the codebase for every location where this bug manifests. Don't fix just one instance if the same mistake appears in multiple files (e.g., both HelloTriangleApp and ModelViewerApp often share the same bugs).
+2. **Find all affected code** — search the codebase for every location where this bug manifests. Don't fix just one instance if the same mistake appears in multiple files (e.g., both TestSceneApp and ModelViewerApp often share the same bugs).
 
 3. **Explain what's wrong** — before changing anything, explain:
    - What the current code does.

@@ -1,6 +1,6 @@
 # CLAUDE.md — vkeng (vulkanRenderer)
 
-C++17 Vulkan renderer. **Scope (rescoped 2026-10-31): a renderer, not a game engine foundation.** Physics, audio and scene serialization were removed as unused stubs (last present at commit 607f22d) and are out of scope. ~18k lines under `src/` and `include/vulkan-engine/`, 4 GLSL shaders. Three apps: `test_scene` (HelloTriangleApp), `model_viewer` (ModelViewerApp), and `rd_viewer` (RdViewerApp — loads `.rd` scene files). Architecture details live in [README.md](README.md).
+C++17 Vulkan renderer. **Scope (rescoped 2026-10-31): a renderer, not a game engine foundation.** Physics, audio and scene serialization were removed as unused stubs (last present at commit 607f22d) and are out of scope. ~18k lines under `src/` and `include/vulkan-engine/`, 4 GLSL shaders. Three apps: `test_scene` (TestSceneApp), `model_viewer` (ModelViewerApp), and `rd_viewer` (RdViewerApp — loads `.rd` scene files). `Engine` owns the `Renderer`, which owns all rendering resources; an app only builds a scene and calls `renderer_->drawFrame(root, camera)`. New rendering features belong in `Renderer`, not in the apps. Architecture details live in [README.md](README.md).
 
 ## Build (primary: native Windows, since 2026-07-19)
 
@@ -23,11 +23,13 @@ build\Debug\test_scene.exe
 
 ## Testing
 
-`ctest --test-dir build -C Debug --output-on-failure` (`ctest.exe` sits beside `cmake.exe`). Each test renders an RD scene, compares it with `tests/golden/`, and fails on any validation message or error. Run it before and after rendering changes. Set `VKENG_UPDATE_GOLDENS=1` to replace the images after an intended visual change, and review them.
+`ctest --test-dir build -C Debug --output-on-failure` (`ctest.exe` sits beside `cmake.exe`). Each test renders a scene through `rd_viewer` or `model_viewer`, compares it with `tests/golden/`, and fails on any validation message or error. Run it before and after rendering changes. Set `VKENG_UPDATE_GOLDENS=1` to replace the images after an intended visual change, and review them. The tests do not cover resizing or `test_scene` (its animation depends on frame timing), so after changing swapchain or lifecycle code, also resize, minimize and close each app and check its log for `Validation:`.
 
 ## Status (verified 2026-10-31)
 
-Build passing with no warnings on Windows (MSVC Debug and Release, default warning level); all three apps run with zero validation messages.
+Build passing with no warnings on Windows (MSVC Debug and Release, default warning level); all three apps run with zero validation messages, including through resize, minimize and close.
+
+Added 2026-10-31 (uncommitted): **rendering setup moved out of the apps.** `Renderer` now owns the render pass, pipeline manager, descriptors, uniform buffers and shadow pass, and rebuilds them itself on resize; `Engine` owns the `Renderer` and handles `requestCapture()`, so every app can capture. Path resolution moved to `core/RuntimePaths`. `HelloTriangleApp` was renamed `TestSceneApp`. Renders were byte-identical before and after.
 
 Added 2026-07-26 (committed in 607f22d): **RD support completed to full geometry-spec coverage.**
 - **Pipeline topology/polygon mode**: `PipelineConfig` gained `topology` (TriangleList/LineList/LineStrip/
@@ -104,15 +106,13 @@ Fixed 2026-07-19 (committed since): `Logger::log()` null source-location crash �
 
 | Gap | Severity |
 |---|---|
-| Each app hand-writes ~100 lines of pipeline and shadow setup; `rd_viewer` and `model_viewer` differ by only 19 lines | High |
 | Lighting is Blinn-Phong with metallic/roughness adjustments (`shader.frag:184`), not a physically based BRDF | Medium |
 | OBJ is the only model format; the material slots follow glTF but there is no glTF loader | Medium |
 | No post-processing pass (bloom, HDR resolve; tone mapping now done in-shader) | Medium |
 | No mipmaps, anisotropic filtering or MSAA | Medium |
-| Shadows: first directional light only, fixed 20-unit box at the origin (`Renderer.cpp:813`) | Medium |
+| Shadows: first directional light only, fixed 20-unit box at the origin (`Renderer::computeLightSpaceMatrix`) | Medium |
 | Instanced rendering plumbed but `CommandBuffer` always draws 1 instance | Medium |
 | `EventSystem` and the fixed-timestep loop have no users now the stubs are gone | Low |
-| `HelloTriangleApp` name no longer describes `test_scene` | Low |
 | Frustum culling per-mesh only, no hierarchical subtree rejection | Low |
 | RD `Map*` texture commands parsed but not applied; `Subdivision` renders its control cage | Low |
 | `Buffer.cpp:151`: debug naming pending debug utils extension | Low |
@@ -120,16 +120,14 @@ Fixed 2026-07-19 (committed since): `Logger::log()` null source-location crash �
 ## Roadmap (priority order — rescoped to a renderer 2026-10-31)
 
 Done: Windows smoke test, shadow sampling, RD scene support to full geometry-spec coverage, stub removal,
-render regression tests.
+render regression tests, rendering setup moved out of the apps.
 
-1. **Move the repeated app setup into the engine**: pipeline, descriptor and shadow wiring, then rename
-   `HelloTriangleApp`. Comes before bloom, whose HDR chain would otherwise be wired into all three apps by hand.
-2. HDR render target and bloom (makes the RD sun/star glow bleed properly; unlocks later screen-space effects)
-3. Mipmaps and anisotropic filtering (`samplerAnisotropy` is not enabled; mipmaps must come first to matter)
-4. Cook-Torrance PBR with glTF loading
-5. Shadows fitted to the scene
-6. MSAA
-7. Later, if wanted: skybox, RD texture mapping (`Map*` family + PPM loader), Catmull-Clark subdivision,
+1. **HDR render target and bloom** (makes the RD sun/star glow bleed properly; unlocks later screen-space effects)
+2. Mipmaps and anisotropic filtering (`samplerAnisotropy` is not enabled; mipmaps must come first to matter)
+3. Cook-Torrance PBR with glTF loading
+4. Shadows fitted to the scene
+5. MSAA
+6. Later, if wanted: skybox, RD texture mapping (`Map*` family + PPM loader), Catmull-Clark subdivision,
    instancing wiring, hierarchical culling
 
 Fixed 2026-07-19: the washed-out look was double gamma — `shader.frag` applied `pow(1/2.2)` on top of the sRGB swapchain's hardware encoding. Removed manual gamma, added ACES tone mapping, dropped test-scene material specular 0.35→0.06. Before/after: `docs/screenshots/blown_out_look.png` vs `tonemapped_look.png`. Note: the color pipeline convention is now "shader outputs linear; swapchain encodes" — any future shader must not gamma-correct manually.

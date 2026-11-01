@@ -1,8 +1,8 @@
-Create a test scene in HelloTriangleApp (or ModelViewerApp) to test: `$ARGUMENTS`
+Create a test scene in TestSceneApp (or ModelViewerApp) to test: `$ARGUMENTS`
 
 ## Process
 
-1. **Read the current scene setup** in `src/HelloTriangleApp.cpp` — specifically `initScene()` and `onUpdate()` — to understand how objects are currently created and positioned.
+1. **Read the current scene setup** in `src/TestSceneApp.cpp` — specifically `initScene()` and `onUpdate()` — to understand how objects are currently created and positioned.
 
 2. **Plan the test scene** — describe what objects, positions, materials, and camera angles are needed to test the feature or reproduce the bug. Keep it minimal — just enough to verify the thing being tested.
 

@@ -32,5 +32,5 @@ Before writing code, present a design that covers:
 
 ## Phase 4: Integration Test
 
-- Show how to use the new subsystem from `HelloTriangleApp` or `ModelViewerApp`.
+- Show how to use the new subsystem from `TestSceneApp` or `ModelViewerApp`.
 - Identify any changes needed to existing code (Renderer, Engine, etc.) and explain why.

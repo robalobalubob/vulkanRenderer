@@ -80,7 +80,8 @@ int main(int argc, char* argv[]) {
         LOG_INFO(GENERAL, "rd_viewer: loading {}", rdFilePath);
         vkeng::RdViewerApp app(config, rdFilePath);
         if (!capturePath.empty()) {
-            app.setCaptureRequest(capturePath, captureFrameIndex);
+            app.requestCapture(capturePath);
+            app.setCaptureFrame(captureFrameIndex);
         }
         app.run();
     } catch (const std::exception& e) {

@@ -1,5 +1,6 @@
 #include "vulkan-engine/core/Engine.hpp"
 #include "vulkan-engine/core/GlfwWindow.hpp"
+#include "vulkan-engine/core/RuntimePaths.hpp"
 #include "vulkan-engine/core/Time.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -14,6 +15,7 @@ namespace vkeng {
         inputManager_ = std::make_unique<InputManager>();
         initWindow();
         initVulkanCore();
+        initRenderer();
     }
 
     Engine::~Engine() {
@@ -23,12 +25,13 @@ namespace vkeng {
         }
 
         // Derived class resources should be destroyed in their destructors or onShutdown
-        // But we need to ensure order. 
-        // C++ destructors run in reverse order of construction. 
+        // But we need to ensure order.
+        // C++ destructors run in reverse order of construction.
         // Derived destructor runs FIRST, then Base destructor.
-        // So App resources (Renderer, Pipeline) will be destroyed before Device/Instance.
+        // So App resources (scene, materials) will be destroyed before the Renderer.
         // This is correct.
 
+        renderer_.reset();
         swapChain_.reset();
         fallbackTexture_.reset();
         fallbackNormalTexture_.reset();
@@ -147,10 +150,22 @@ namespace vkeng {
         swapChain_ = std::make_unique<VulkanSwapChain>(device_->getDevice(), device_->getPhysicalDevice(), surface_, width, height, memoryManager_);
     }
 
+    void Engine::initRenderer() {
+        Renderer::ShaderPaths shaders;
+        shaders.vertex = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
+        shaders.fragment = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
+        shaders.shadowVertex = resolveShaderPath("", "shadow_vert.spv");
+        shaders.shadowFragment = resolveShaderPath("", "shadow_frag.spv");
+
+        Material::FallbackTextures fallbacks{fallbackTexture_, fallbackNormalTexture_, fallbackMRTexture_};
+        renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, memoryManager_, shaders, fallbacks);
+    }
+
     void Engine::run() {
         onInit(); // Allow derived class to initialize its specific resources
 
         auto& time = Time::get();
+        uint32_t renderedFrames = 0;
 
         while (!window_->shouldClose() && !exitRequested_) {
             window_->pollEvents();
@@ -170,9 +185,21 @@ namespace vkeng {
             // Render
             onRender();
 
+            // Capture after a short warm-up: the first frames go out while pipelines are
+            // still compiling and the swapchain may yet be recreated for the real window
+            // size, so grabbing frame 0 would catch an incomplete image.
+            if (isCapturing() && ++renderedFrames == CAPTURE_WARMUP_FRAMES) {
+                auto result = renderer_->captureFrame(capturePath_);
+                if (!result) {
+                    throw std::runtime_error("Capture failed: " + result.getError().message);
+                }
+                requestExit();
+            }
+
             inputManager_->endFrame();
         }
 
+        vkDeviceWaitIdle(device_->getDevice());
         onShutdown();
     }
 

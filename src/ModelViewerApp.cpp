@@ -4,8 +4,7 @@
 #include "vulkan-engine/components/MeshRenderer.hpp"
 #include "vulkan-engine/core/InputManager.hpp"
 #include "vulkan-engine/core/Logger.hpp"
-#include "vulkan-engine/rendering/GlobalDescriptors.hpp"
-#include "vulkan-engine/rendering/Uniforms.hpp"
+#include "vulkan-engine/core/RuntimePaths.hpp"
 #include "vulkan-engine/resources/Material.hpp"
 #include "vulkan-engine/resources/Mesh.hpp"
 #include "vulkan-engine/resources/MeshLoader.hpp"
@@ -19,77 +18,6 @@
 namespace vkeng {
 
 namespace {
-std::filesystem::path getCompiledShaderOutputDir() {
-#ifdef VKENG_SHADER_OUTPUT_DIR
-    return std::filesystem::path(VKENG_SHADER_OUTPUT_DIR);
-#else
-    return std::filesystem::path("shaders");
-#endif
-}
-
-std::filesystem::path getStagedAssetOutputDir() {
-#ifdef VKENG_ASSET_OUTPUT_DIR
-    return std::filesystem::path(VKENG_ASSET_OUTPUT_DIR);
-#else
-    return std::filesystem::path("assets");
-#endif
-}
-
-std::filesystem::path stripLeadingDirectoryPrefix(const std::filesystem::path& path, const char* prefix) {
-    if (path.empty()) {
-        return path;
-    }
-
-    auto component = path.begin();
-    if (component == path.end() || *component != prefix) {
-        return path;
-    }
-
-    std::filesystem::path relativePath;
-    ++component;
-    for (; component != path.end(); ++component) {
-        relativePath /= *component;
-    }
-
-    return relativePath;
-}
-
-std::filesystem::path resolveRuntimePath(const std::string& configuredPath,
-                                        const std::filesystem::path& defaultPath,
-                                        const std::filesystem::path& stagedRoot,
-                                        const char* sourcePrefix) {
-    const std::filesystem::path requestedPath = configuredPath.empty()
-        ? defaultPath
-        : std::filesystem::path(configuredPath);
-
-    if (requestedPath.is_absolute()) {
-        return requestedPath;
-    }
-
-    const std::filesystem::path stagedPath = stagedRoot / stripLeadingDirectoryPrefix(requestedPath, sourcePrefix);
-    if (std::filesystem::exists(stagedPath)) {
-        return stagedPath;
-    }
-
-    return requestedPath;
-}
-
-std::filesystem::path resolveShaderPath(const std::string& configuredPath, const char* defaultFileName) {
-    return resolveRuntimePath(
-        configuredPath,
-        std::filesystem::path("shaders") / defaultFileName,
-        getCompiledShaderOutputDir(),
-        "shaders");
-}
-
-std::filesystem::path resolveAssetBasePath(const std::string& configuredPath) {
-    return resolveRuntimePath(
-        configuredPath,
-        "assets",
-        getStagedAssetOutputDir(),
-        "assets");
-}
-
 const char* toString(DebugShadingMode mode) {
     switch (mode) {
         case DebugShadingMode::Lit:
@@ -123,126 +51,12 @@ ModelViewerApp::ModelViewerApp(const Config& config) : Engine(config) {}
 ModelViewerApp::~ModelViewerApp() = default;
 
 void ModelViewerApp::onInit() {
-    initRenderingPipeline();
     initScene();
 }
 
 void ModelViewerApp::onShutdown() {
-    vkDeviceWaitIdle(device_->getDevice());
-
     defaultMaterial_.reset();
     referenceMaterial_.reset();
-    materialDescriptorPool_.reset();
-    textureSetLayout_.reset();
-
-    renderer_.reset();
-    shadowPass_.reset();
-    pipelineManager_.reset();
-    shadowSetLayout_.reset();
-
-    if (descriptorPool_ != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device_->getDevice(), descriptorPool_, nullptr);
-    }
-    if (descriptorSetLayout_ != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device_->getDevice(), descriptorSetLayout_, nullptr);
-    }
-}
-
-void ModelViewerApp::initRenderingPipeline() {
-    // 1. Create RenderPass
-    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
-
-    // 2. Create PBR texture descriptor set layout (set 1, bindings 0-4) and material descriptor pool
-    textureSetLayout_ = DescriptorManager::get().createCombinedLayout({
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // baseColor
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // normal
-        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // metallicRoughness
-        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // occlusion
-        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT}, // emissive
-    });
-    materialDescriptorPool_ = DescriptorManager::get().createPool(32);
-
-    // 3. Create shadow map descriptor set layout (set 2)
-    shadowSetLayout_ = DescriptorManager::get().createCombinedLayout({
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT},
-    });
-
-    // 4. Create UBO descriptor set layout (set 0) and PipelineManager (with shadow set layout)
-    descriptorSetLayout_ = createGlobalSetLayout(device_->getDevice());
-    pipelineManager_ = std::make_unique<PipelineManager>(device_->getDevice(), descriptorSetLayout_, textureSetLayout_->getHandle(), shadowSetLayout_->getHandle());
-
-    // 4. Configure default pipeline
-    defaultPipelineConfig_.vertShaderPath = resolveShaderPath(config_.render.vertexShaderPath, "vert.spv");
-    defaultPipelineConfig_.fragShaderPath = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
-    defaultPipelineConfig_.blendMode = BlendMode::Opaque;
-    defaultPipelineConfig_.cullMode = CullMode::Back;
-    defaultPipelineConfig_.depthWriteEnable = true;
-    defaultPipelineConfig_.depthTestEnable = true;
-
-    // 5. Create Uniform Buffers and Descriptors
-    uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-    for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
-        auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
-        if (!bufferResult) {
-            throw std::runtime_error("failed to create uniform buffer!");
-        }
-        uniformBuffers_[i] = bufferResult.getValue();
-    }
-
-    // 6. Create Renderer. It owns the material buffers, so it must exist before
-    //    the descriptor sets that reference them.
-    renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, renderPass_, *pipelineManager_, defaultPipelineConfig_, memoryManager_);
-
-    descriptorPool_ = createGlobalDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
-    createGlobalDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT,
-                               descriptorPool_, descriptorSetLayout_, uniformBuffers_,
-                               renderer_->getMaterialBuffers(), descriptorSets_);
-
-    // 7. Create fallback texture descriptor set (all 5 PBR slots)
-    {
-        auto setResult = materialDescriptorPool_->allocateDescriptorSet(textureSetLayout_);
-        if (!setResult) throw std::runtime_error("Failed to allocate fallback texture descriptor set");
-        fallbackTextureDescriptorSet_ = setResult.getValue();
-
-        DescriptorSet fallbackDescSet(device_->getDevice(), fallbackTextureDescriptorSet_, textureSetLayout_);
-        fallbackDescSet.writeImage(0, fallbackTexture_->getImage(), fallbackTexture_->getSampler());
-        fallbackDescSet.writeImage(1, fallbackNormalTexture_->getImage(), fallbackNormalTexture_->getSampler());
-        fallbackDescSet.writeImage(2, fallbackMRTexture_->getImage(), fallbackMRTexture_->getSampler());
-        fallbackDescSet.writeImage(3, fallbackTexture_->getImage(), fallbackTexture_->getSampler());
-        fallbackDescSet.writeImage(4, fallbackTexture_->getImage(), fallbackTexture_->getSampler());
-        fallbackDescSet.update();
-    }
-    renderer_->setFallbackTextureDescriptorSet(fallbackTextureDescriptorSet_);
-
-    // 8. Set Callback
-    renderer_->setRecreateCallback([this](uint32_t width, uint32_t height) {
-        recreateResources(width, height);
-    });
-
-    // 9. Shadow mapping setup
-    shadowPass_ = std::make_unique<ShadowPass>(device_->getDevice(), device_->getPhysicalDevice(), memoryManager_);
-
-    {
-        auto setResult = materialDescriptorPool_->allocateDescriptorSet(shadowSetLayout_);
-        if (!setResult) throw std::runtime_error("Failed to allocate shadow descriptor set");
-        shadowDescriptorSet_ = setResult.getValue();
-
-        DescriptorSet shadowDescSet(device_->getDevice(), shadowDescriptorSet_, shadowSetLayout_);
-        shadowDescSet.writeImage(0, shadowPass_->getDepthImage(), shadowPass_->getSampler(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-        shadowDescSet.update();
-    }
-
-    shadowPipelineConfig_.vertShaderPath = resolveShaderPath("", "shadow_vert.spv");
-    shadowPipelineConfig_.fragShaderPath = resolveShaderPath("", "shadow_frag.spv");
-    shadowPipelineConfig_.blendMode = BlendMode::Opaque;
-    shadowPipelineConfig_.cullMode = CullMode::Front;
-    shadowPipelineConfig_.depthWriteEnable = true;
-    shadowPipelineConfig_.depthTestEnable = true;
-    shadowPipelineConfig_.depthOnly = true;
-
-    renderer_->setShadowPass(shadowPass_.get());
-    renderer_->setShadowDescriptorSet(shadowDescriptorSet_);
-    renderer_->setShadowPipelineConfig(shadowPipelineConfig_);
 }
 
 std::filesystem::path ModelViewerApp::resolveModelPath() const {
@@ -282,9 +96,8 @@ void ModelViewerApp::initScene() {
     referenceMaterial_->setRoughnessFactor(0.9f);
 
     // Create descriptor sets for materials
-    Material::FallbackTextures fallbacks{fallbackTexture_, fallbackNormalTexture_, fallbackMRTexture_};
-    defaultMaterial_->createDescriptorSet(device_->getDevice(), materialDescriptorPool_, textureSetLayout_, fallbacks);
-    referenceMaterial_->createDescriptorSet(device_->getDevice(), materialDescriptorPool_, textureSetLayout_, fallbacks);
+    renderer_->createMaterialDescriptors(*defaultMaterial_);
+    renderer_->createMaterialDescriptors(*referenceMaterial_);
 
     loadModelMesh();
     referenceMesh_ = PrimitiveFactory::createUvSphere(memoryManager_, 1.0f, 24, 48);
@@ -388,9 +201,7 @@ void ModelViewerApp::layoutComparisonScene() {
 
 void ModelViewerApp::setDebugShadingMode(DebugShadingMode mode) {
     debugShadingMode_ = mode;
-    if (renderer_) {
-        renderer_->setDebugShadingMode(mode);
-    }
+    renderer_->setDebugShadingMode(mode);
 
     LOG_INFO(RENDERING, "Viewer debug shading mode set to {}", toString(mode));
 }
@@ -412,39 +223,6 @@ void ModelViewerApp::toggleGeneratedNormalMode() {
 void ModelViewerApp::logViewerControls() const {
     LOG_INFO(GENERAL, "Model viewer controls: 1=lit, 2=unlit, 3=normal debug, N=toggle generated smooth/flat normals, C=toggle frustum culling, R/F=reset camera, H=repeat controls");
     LOG_INFO(GENERAL, "Reference sphere remains on the right side of the scene to compare smooth interpolation against the loaded mesh");
-}
-
-void ModelViewerApp::recreateResources(uint32_t width, uint32_t height) {
-    LOG_INFO(GENERAL, "Recreating model viewer resources for size {}x{}", width, height);
-
-    // 1. Recreate RenderPass
-    renderPass_ = std::make_shared<RenderPass>(device_->getDevice(), swapChain_->imageFormat(), swapChain_->depthFormat());
-
-    // 2. Invalidate cached pipelines (render pass changed, but PipelineCache on disk survives)
-    pipelineManager_->invalidateAll();
-
-    // 3. Recreate Uniform Buffers and Descriptors
-    if (descriptorPool_ != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device_->getDevice(), descriptorPool_, nullptr);
-    }
-    uniformBuffers_.clear();
-
-    uniformBuffers_.resize(Renderer::MAX_FRAMES_IN_FLIGHT);
-    for (size_t i = 0; i < Renderer::MAX_FRAMES_IN_FLIGHT; i++) {
-        auto bufferResult = memoryManager_->createUniformBuffer(sizeof(GlobalUbo));
-        if (!bufferResult) {
-            throw std::runtime_error("failed to create uniform buffer!");
-        }
-        uniformBuffers_[i] = bufferResult.getValue();
-    }
-
-    descriptorPool_ = createGlobalDescriptorPool(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT);
-    createGlobalDescriptorSets(device_->getDevice(), Renderer::MAX_FRAMES_IN_FLIGHT,
-                               descriptorPool_, descriptorSetLayout_, uniformBuffers_,
-                               renderer_->getMaterialBuffers(), descriptorSets_);
-
-    // 4. Update Renderer
-    renderer_->setRenderPass(renderPass_);
 }
 
 void ModelViewerApp::onUpdate(float deltaTime) {
@@ -493,7 +271,7 @@ void ModelViewerApp::onUpdate(float deltaTime) {
 }
 
 void ModelViewerApp::onRender() {
-    renderer_->drawFrame(*rootNode_, *camera_, descriptorSets_, uniformBuffers_);
+    renderer_->drawFrame(*rootNode_, *camera_);
     frameCount_++;
 }
 

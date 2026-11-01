@@ -3,10 +3,9 @@
  * @brief Main rendering system managing frame rendering and command buffer recording
  * 
  * This file contains the Renderer class which orchestrates the entire frame rendering
- * process in Vulkan. It manages command buffer recording, synchronization objects,
- * framebuffers, and coordinates the rendering of scene hierarchies with proper
- * uniform buffer updates and swap chain presentation.
- * 
+ * process in Vulkan. It owns the render passes, pipelines, descriptors, uniform
+ * buffers and shadow map, so an application only supplies a scene and a camera.
+ *
  * Key Rendering Concepts:
  * - Frame-in-Flight: Multiple frames processed simultaneously for performance
  * - Command Recording: Recording GPU commands into command buffers
@@ -24,10 +23,12 @@
 #include "vulkan-engine/rendering/RenderPass.hpp"
 #include "vulkan-engine/rendering/CommandPool.hpp"
 #include "vulkan-engine/rendering/Camera.hpp"
+#include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/rendering/ShadowPass.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/resources/Material.hpp"
 #include "vulkan-engine/core/MemoryManager.hpp"
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -66,60 +67,53 @@ namespace vkeng {
         /// Independent of how many swapchain images the driver provides.
         static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
+        /** @brief Compiled SPIR-V shaders for the main and shadow pipelines. */
+        struct ShaderPaths {
+            std::filesystem::path vertex;
+            std::filesystem::path fragment;
+            std::filesystem::path shadowVertex;
+            std::filesystem::path shadowFragment;
+        };
+
         // ============================================================================
         // Constructor and Destructor
         // ============================================================================
-        
+
         /**
-         * @brief Constructs Renderer with required Vulkan rendering objects
+         * @brief Constructs Renderer and every resource it needs to draw a frame
          * @param window Window interface for presentation and resize handling
          * @param device Vulkan device wrapper for command submission
          * @param swapChain Swap chain for image presentation
-         * @param renderPass Render pass defining rendering operations
-         * @param pipeline Graphics pipeline for rendering
-         * 
-         * Initializes all rendering resources including framebuffers, command buffers,
-         * and synchronization objects required for frame rendering.
-         * 
+         * @param memoryManager Allocator for every buffer and image the renderer creates
+         * @param shaders Compiled shaders for the main and shadow pipelines
+         * @param fallbacks Textures bound to material slots that have none
+         *
+         * Creates the render passes, pipeline manager, descriptors, uniform buffers,
+         * shadow map, framebuffers, command buffers and synchronization objects.
+         *
          * @note All referenced objects must remain valid for the renderer's lifetime
          * @warning May throw exceptions if resource creation fails
          */
         Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapChain,
-                 std::shared_ptr<RenderPass> renderPass, PipelineManager& pipelineManager,
-                 const PipelineConfig& defaultConfig,
-                 std::shared_ptr<MemoryManager> memoryManager);
+                 std::shared_ptr<MemoryManager> memoryManager,
+                 const ShaderPaths& shaders,
+                 const Material::FallbackTextures& fallbacks);
 
         ~Renderer();
 
         Renderer(const Renderer&) = delete;
         Renderer& operator=(const Renderer&) = delete;
 
-        /**
-         * @brief Sets the RenderPass to be used.
-         */
-        void setRenderPass(std::shared_ptr<RenderPass> renderPass) { m_renderPass = renderPass; }
-
-        /** @brief Invalidate cached pipelines (call after render pass / extent change). */
-        void invalidatePipelines() { m_pipelineManager.invalidateAll(); }
-
-        /**
-         * @brief Callback type for swapchain recreation.
-         * Called after swapchain is recreated but before framebuffers are created.
-         * Allows the app to recreate RenderPass and Pipeline.
-         */
-        using RecreateCallback = std::function<void(uint32_t width, uint32_t height)>;
-
         void setDebugShadingMode(DebugShadingMode mode) { m_debugShadingMode = mode; }
         DebugShadingMode getDebugShadingMode() const { return m_debugShadingMode; }
 
-        void setFallbackTextureDescriptorSet(VkDescriptorSet set) { m_fallbackTextureDescriptorSet = set; }
-
-        /** @brief Set the shadow pass for directional shadow mapping. */
-        void setShadowPass(ShadowPass* shadowPass) { m_shadowPass = shadowPass; }
-        /** @brief Set the descriptor set for the shadow map (set 2). */
-        void setShadowDescriptorSet(VkDescriptorSet set) { m_shadowDescriptorSet = set; }
-        /** @brief Set the shadow pipeline config (depth-only, front-face cull). */
-        void setShadowPipelineConfig(const PipelineConfig& config) { m_shadowConfig = config; }
+        /**
+         * @brief Creates a material's texture descriptor set (set 1).
+         * @param material Material to prepare. Slots without a texture use the fallbacks.
+         *
+         * Materials without a descriptor set draw with the fallback textures.
+         */
+        void createMaterialDescriptors(Material& material);
 
         /** @brief Set the global ambient light color applied to all lit surfaces. */
         void setAmbientColor(const glm::vec3& color) { m_ambientColor = glm::vec4(color, 1.0f); }
@@ -141,18 +135,10 @@ namespace vkeng {
         uint32_t getCulledCount() const { return m_culledCount; }
 
         /**
-         * @brief Sets the callback for swapchain recreation.
-         * @param callback Function to call when swapchain is recreated
-         */
-        void setRecreateCallback(RecreateCallback callback) { m_recreateCallback = callback; }
-
-        /**
          * @brief Renders a complete frame to the swap chain
          * @param rootNode Root of the scene graph to render
          * @param camera Camera providing view and projection matrices
-         * @param descriptorSets Per-frame descriptor sets for shader resources
-         * @param uniformBuffers Per-frame uniform buffers for shader constants
-         * 
+         *
          * This method performs the complete frame rendering process:
          * 1. Polls for window resize (WSL2 compatibility)
          * 2. Handles swapchain recreation if needed
@@ -163,9 +149,7 @@ namespace vkeng {
          * 
          * @note Uses multiple frames in flight for optimal GPU utilization
          */
-        void drawFrame(SceneNode& rootNode, Camera& camera,
-                         const std::vector<VkDescriptorSet>& descriptorSets,
-                         const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
+        void drawFrame(SceneNode& rootNode, Camera& camera);
 
         /**
          * @brief Reads the most recently presented image back and writes a PPM.
@@ -181,23 +165,23 @@ namespace vkeng {
          */
         Result<void> captureFrame(const std::string& path);
 
-        /**
-         * @brief The per-frame material storage buffers, one per frame in flight.
-         *
-         * Apps bind these at set 0, binding 1 when creating their descriptor
-         * sets (see GlobalDescriptors.hpp). The renderer fills the current
-         * frame's buffer from the materials it collects while walking the
-         * scene; draws index into it via push constants.
-         */
-        const std::vector<std::shared_ptr<Buffer>>& getMaterialBuffers() const {
-            return m_materialBuffers;
-        }
-
     private:
         // ============================================================================
         // Resource Creation Methods
         // ============================================================================
-        
+
+        /** @brief Creates the descriptor layouts, material pool and pipeline manager. */
+        void createPipelineResources(const ShaderPaths& shaders);
+
+        /** @brief Creates the per-frame uniform and material buffers and set 0. */
+        void createFrameResources();
+
+        /** @brief Creates the texture set that materials without their own draw with. */
+        void createFallbackDescriptorSet();
+
+        /** @brief Creates the shadow map and its descriptor set (set 2). */
+        void createShadowResources();
+
         /**
          * @brief Creates framebuffers for all swap chain images
          * 
@@ -241,7 +225,7 @@ namespace vkeng {
          * - Waiting for device idle
          * - Destroying old framebuffers
          * - Recreating swap chain with new dimensions
-         * - Calling the recreate callback for app-level resource recreation
+         * - Recreating the render pass and invalidating cached pipelines
          * - Updating camera aspect ratio
          * - Recreating framebuffers
          */
@@ -257,9 +241,7 @@ namespace vkeng {
          * @param imageIndex Current swap chain image index
          * @param rootNode Root scene node for hierarchical rendering
          * @param camera Camera for view/projection matrices
-         * @param descriptorSets Descriptor sets for shader resource binding
-         * @param uniformBuffers Uniform buffers for constant data
-         * 
+         *
          * Records all rendering commands for the current frame including:
          * - Render pass begin/end
          * - Pipeline binding
@@ -267,23 +249,17 @@ namespace vkeng {
          * - Descriptor set binding
          * - Scene traversal and mesh rendering
          */
-        void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& rootNode, Camera& camera,
-                                 const std::vector<VkDescriptorSet>& descriptorSets,
-                                 const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
-        
+        void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, SceneNode& rootNode, Camera& camera);
+
         /**
          * @brief Updates uniform buffer with camera matrices for current frame
          * @param currentImage Current frame index for multi-frame rendering
          * @param camera Camera providing view and projection matrices
-         * @param uniformBuffers Vector of per-frame uniform buffers to update
-         * 
+         *
          * Updates the uniform buffer for the current frame with the GlobalUbo
          * structure containing view, projection, and view-projection matrices.
          */
-        void updateGlobalUbo(uint32_t currentImage, Camera& camera,
-                                 const std::vector<std::shared_ptr<Buffer>>& uniformBuffers);
-
-        void renderNode(VkCommandBuffer commandBuffer, const SceneNode& node);
+        void updateGlobalUbo(uint32_t currentImage, Camera& camera);
 
         /**
          * @brief Collects all active Light components from the scene graph
@@ -299,19 +275,30 @@ namespace vkeng {
         IWindow* m_window;                              ///< Window interface for presentation and resize detection
         VulkanDevice& m_device;                         ///< Vulkan device wrapper for command submission
         VulkanSwapChain& m_swapChain;                   ///< Swap chain for image presentation
-        std::shared_ptr<RenderPass> m_renderPass;       ///< Render pass defining rendering operations
-        PipelineManager& m_pipelineManager;             ///< Pipeline variant cache
+        std::unique_ptr<RenderPass> m_renderPass;       ///< Render pass defining rendering operations
+        std::unique_ptr<PipelineManager> m_pipelineManager; ///< Pipeline variant cache and shared layout
         PipelineConfig m_defaultConfig;                 ///< Default (opaque) pipeline config
-
-        RecreateCallback m_recreateCallback;            ///< Callback invoked during swapchain recreation
 
         // ============================================================================
         // Rendering Resources
         // ============================================================================
-        
+
         uint32_t m_lastPresentedImage = 0;                  ///< Swapchain index of the last presented frame (for captureFrame)
         std::shared_ptr<MemoryManager> m_memoryManager;     ///< Owns every buffer allocation the renderer makes
         std::unique_ptr<CommandPool> m_commandPool;         ///< Command pool for buffer allocation
+
+        // ============================================================================
+        // Descriptors
+        // ============================================================================
+
+        Material::FallbackTextures m_fallbacks;                  ///< Bound to material slots that have no texture
+        VkDescriptorSetLayout m_globalSetLayout = VK_NULL_HANDLE;   ///< Layout for per-frame globals (set 0)
+        VkDescriptorPool m_globalDescriptorPool = VK_NULL_HANDLE;   ///< Pool for the per-frame sets
+        std::vector<VkDescriptorSet> m_globalDescriptorSets;     ///< One set 0 per frame in flight
+        std::vector<std::shared_ptr<Buffer>> m_uniformBuffers;   ///< One GlobalUbo buffer per frame in flight
+        std::shared_ptr<DescriptorSetLayout> m_textureSetLayout; ///< Layout for per-material textures (set 1)
+        std::shared_ptr<DescriptorSetLayout> m_shadowSetLayout;  ///< Layout for the shadow map (set 2)
+        std::shared_ptr<DescriptorPool> m_materialDescriptorPool; ///< Pool for material, fallback and shadow sets
 
         // ============================================================================
         // Material buffer
@@ -362,7 +349,7 @@ namespace vkeng {
         // Shadow Mapping
         // ============================================================================
 
-        ShadowPass* m_shadowPass = nullptr;                ///< Non-owning pointer to shadow pass (null = no shadows)
+        std::unique_ptr<ShadowPass> m_shadowPass;          ///< Depth-only pass producing the shadow map
         VkDescriptorSet m_shadowDescriptorSet = VK_NULL_HANDLE; ///< Shadow map descriptor set (set 2)
         PipelineConfig m_shadowConfig{};                    ///< Pipeline config for shadow depth pass
         glm::mat4 m_lightSpaceMatrix{1.f};                 ///< Cached light-space VP matrix
@@ -391,7 +378,7 @@ namespace vkeng {
         std::vector<DrawCall> m_opaqueDrawCalls;       ///< Opaque + alpha-mask draws
         std::vector<DrawCall> m_transparentDrawCalls;   ///< Alpha-blend draws (sorted back-to-front)
 
-        /** @brief Collect draw calls from the scene graph (replaces immediate renderNode drawing). */
+        /** @brief Collect draw calls from the scene graph. */
         void collectDrawCalls(const SceneNode& node, const glm::vec3& cameraPos);
 
         /** @brief Issue all collected draw calls with correct pipeline binding. */

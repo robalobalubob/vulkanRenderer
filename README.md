@@ -75,7 +75,7 @@ This project is a renderer, and its work goes into image quality and the renderi
 
 ### **Developer Experience**
 - **Structured logging**: color-coded, categorized logging (GENERAL, INPUT, CAMERA, RENDERING, VULKAN, MEMORY)
-- **Render regression tests**: RD scenes are captured and compared with saved images through CTest
+- **Render regression tests**: RD scenes and the model viewer are captured and compared with saved images through CTest
 - **VMA integration**: Vulkan Memory Allocator for efficient GPU memory management
 - **RAII design**: every Vulkan handle created in a constructor is destroyed in the destructor
 - **Cross-platform**: CMake build system, no platform-specific headers in engine code
@@ -140,7 +140,7 @@ cmake --build build
 
 ## Controls
 
-### test_scene (HelloTriangleApp)
+### test_scene (TestSceneApp)
 
 | Key/Action | Behavior |
 |------------|----------|
@@ -155,7 +155,8 @@ cmake --build build
 
 ### model_viewer (ModelViewerApp)
 
-The model viewer uses orbit controls by default. Pass an optional OBJ path as the first argument.
+The model viewer uses orbit controls by default. Pass an optional OBJ path as an argument, and
+`--capture <out.ppm>` to render a few warm-up frames, write a binary PPM, and exit.
 
 | Key/Action | Behavior |
 |------------|----------|
@@ -221,7 +222,8 @@ pass through tone mapping, so a white line matches a fully lit white surface.
 vulkanRenderer/
 +-- include/vulkan-engine/
 |   +-- core/          Engine, VulkanInstance, VulkanDevice, VulkanSwapChain,
-|   |                  MemoryManager, Buffer, InputManager, Logger, Time, EventSystem
+|   |                  MemoryManager, Buffer, InputManager, Logger, Time, EventSystem,
+|   |                  RuntimePaths
 |   +-- rendering/     Renderer, Pipeline, PipelineManager, RenderPass, ShadowPass,
 |   |                  Camera, CameraController, CommandPool, DescriptorSet, Vertex, Uniforms
 |   +-- resources/     Mesh, MeshLoader, Texture, TextureLoader, Material,
@@ -229,7 +231,7 @@ vulkanRenderer/
 |   +-- components/    Component (base), MeshRenderer, Light
 |   +-- scene/         SceneNode, RdSceneLoader
 |   +-- math/          Transform
-|   +-- examples/      HelloTriangleApp, ModelViewerApp, RdViewerApp
+|   +-- examples/      TestSceneApp, ModelViewerApp, RdViewerApp
 +-- src/               Implementations mirroring the include structure
 +-- shaders/           GLSL shader sources (compiled to SPIR-V by CMake)
 +-- assets/            Models and RD scenes staged into the build directory at build time
@@ -251,7 +253,8 @@ vulkanRenderer/
 - **EventSystem**: type-safe publish/subscribe bus
 
 ### Rendering Pipeline
-- **Renderer**: frame coordination -- acquires swapchain image, records shadow pass, records main pass, submits, presents
+- **Renderer**: owned by `Engine` and available to apps as `renderer_`. Owns the render passes, pipeline manager, descriptors, uniform buffers and shadow map, and rebuilds what depends on the swapchain after a resize. An app only supplies a scene and a camera to `drawFrame()`
+- **Frame sequence**: acquires swapchain image, records shadow pass, records main pass, submits, presents
 - **RenderPass**: color + depth render pass with subpass dependencies
 - **ShadowPass**: depth-only render pass producing a shadow map sampled in the main pass
 - **PipelineManager**: creates and caches `Pipeline` variants keyed by `PipelineConfig`; owns the shared `VkPipelineLayout` and `PipelineCache`
@@ -364,8 +367,8 @@ cmake --build build --config Debug --parallel
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-Each test renders an RD scene with `rd_viewer --capture` and compares it with its image in `tests/golden/`,
-allowing small per-channel differences. A test also fails if the run logs a validation message or an error;
+Each test renders a scene with `rd_viewer --capture` or `model_viewer --capture` and compares it with its
+image in `tests/golden/`, allowing small per-channel differences. A test also fails if the run logs a validation message or an error;
 validation layers only run in Debug builds, so use Debug for the full check. Each test opens a window briefly.
 
 The saved images came from one machine, so a different GPU or driver may need its own. After an intended

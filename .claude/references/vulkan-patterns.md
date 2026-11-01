@@ -72,7 +72,7 @@ Pipelines depend on render pass compatibility. When the swapchain is recreated:
 7. Recreate/update descriptor sets if image count changed
 ```
 
-vkeng handles this via the `Renderer::setRecreateCallback()` mechanism.
+vkeng handles this in `Renderer::recreateSwapChain()`.
 
 ## Push Constants vs Uniform Buffers
 

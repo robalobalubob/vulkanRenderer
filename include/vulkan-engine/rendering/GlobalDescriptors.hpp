@@ -1,15 +1,13 @@
 /**
  * @file GlobalDescriptors.hpp
- * @brief Descriptor set 0 — the per-frame globals every app binds identically.
+ * @brief Descriptor set 0 — the per-frame globals the Renderer binds for every draw.
  *
  * Set 0 holds two bindings:
  *   0. GlobalUbo          — camera matrices, ambient, debug flags, lights
  *   1. Material buffer    — the per-frame material array, indexed by the
  *                           material index in MeshPushConstants
  *
- * Both are per frame in flight. The three apps previously each carried a
- * private copy of this setup; keeping one definition here means a change to
- * the global layout cannot leave one app silently out of sync with the shaders.
+ * Both are per frame in flight.
  */
 #pragma once
 
@@ -90,7 +88,7 @@ inline VkDescriptorPool createGlobalDescriptorPool(VkDevice device, uint32_t fra
  * @param pool Pool to allocate from.
  * @param layout Layout created by createGlobalSetLayout.
  * @param uniformBuffers Per-frame GlobalUbo buffers.
- * @param materialBuffers Per-frame material buffers (Renderer::getMaterialBuffer).
+ * @param materialBuffers Per-frame material storage buffers.
  * @param outSets Receives the allocated sets.
  */
 inline void createGlobalDescriptorSets(VkDevice device, uint32_t frameCount,
