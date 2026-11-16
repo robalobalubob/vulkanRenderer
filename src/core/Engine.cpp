@@ -156,6 +156,10 @@ namespace vkeng {
         shaders.fragment = resolveShaderPath(config_.render.fragmentShaderPath, "frag.spv");
         shaders.shadowVertex = resolveShaderPath("", "shadow_vert.spv");
         shaders.shadowFragment = resolveShaderPath("", "shadow_frag.spv");
+        shaders.post.fullscreenVertex = resolveShaderPath("", "fullscreen_vert.spv");
+        shaders.post.bloomDownFragment = resolveShaderPath("", "bloom_down_frag.spv");
+        shaders.post.bloomUpFragment = resolveShaderPath("", "bloom_up_frag.spv");
+        shaders.post.compositeFragment = resolveShaderPath("", "composite_frag.spv");
 
         Material::FallbackTextures fallbacks{fallbackTexture_, fallbackNormalTexture_, fallbackMRTexture_};
         renderer_ = std::make_unique<Renderer>(window_.get(), *device_, *swapChain_, memoryManager_, shaders, fallbacks);

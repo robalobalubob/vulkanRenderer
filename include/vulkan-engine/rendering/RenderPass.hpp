@@ -43,14 +43,18 @@ namespace vkeng {
          * @param device Logical device for render pass creation
          * @param colorFormat Format of the color attachment (swapchain image format)
          * @param depthFormat Format of the depth attachment (e.g., VK_FORMAT_D32_SFLOAT)
-         * 
+         * @param colorFinalLayout Layout the color attachment ends in: PRESENT_SRC_KHR when
+         *        rendering straight to the swapchain, SHADER_READ_ONLY_OPTIMAL when a later
+         *        pass samples it (the HDR scene target)
+         *
          * Creates a single-subpass render pass suitable for basic 3D rendering with:
-         * - Color attachment: CLEAR on load, STORE for output, transitions to PRESENT_SRC
+         * - Color attachment: CLEAR on load, STORE for output, transitions to colorFinalLayout
          * - Depth attachment: CLEAR on load, DONT_CARE on store, optimal layout
-         * 
+         *
          * @note Uses VK_ATTACHMENT_LOAD_OP_CLEAR for both attachments
          */
-        explicit RenderPass(VkDevice device, VkFormat colorFormat, VkFormat depthFormat);
+        explicit RenderPass(VkDevice device, VkFormat colorFormat, VkFormat depthFormat,
+                            VkImageLayout colorFinalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
         
         /**
          * @brief Destroys the render pass

@@ -58,13 +58,21 @@ vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.vert" "${VKENG_
 vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.frag" "${VKENG_SHADER_OUTPUT_DIR}/frag.spv")
 vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.vert" "${VKENG_SHADER_OUTPUT_DIR}/shadow_vert.spv")
 vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow.frag" "${VKENG_SHADER_OUTPUT_DIR}/shadow_frag.spv")
+vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/fullscreen.vert" "${VKENG_SHADER_OUTPUT_DIR}/fullscreen_vert.spv")
+vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_down.frag" "${VKENG_SHADER_OUTPUT_DIR}/bloom_down_frag.spv")
+vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/bloom_up.frag" "${VKENG_SHADER_OUTPUT_DIR}/bloom_up_frag.spv")
+vkeng_compile_shader("${CMAKE_CURRENT_SOURCE_DIR}/shaders/composite.frag" "${VKENG_SHADER_OUTPUT_DIR}/composite_frag.spv")
 
 add_custom_target(compile_shaders
     DEPENDS
         "${VKENG_SHADER_OUTPUT_DIR}/vert.spv"
         "${VKENG_SHADER_OUTPUT_DIR}/frag.spv"
         "${VKENG_SHADER_OUTPUT_DIR}/shadow_vert.spv"
-        "${VKENG_SHADER_OUTPUT_DIR}/shadow_frag.spv")
+        "${VKENG_SHADER_OUTPUT_DIR}/shadow_frag.spv"
+        "${VKENG_SHADER_OUTPUT_DIR}/fullscreen_vert.spv"
+        "${VKENG_SHADER_OUTPUT_DIR}/bloom_down_frag.spv"
+        "${VKENG_SHADER_OUTPUT_DIR}/bloom_up_frag.spv"
+        "${VKENG_SHADER_OUTPUT_DIR}/composite_frag.spv")
 
 file(GLOB_RECURSE VKENG_ASSET_SOURCES
     CONFIGURE_DEPENDS
@@ -122,6 +130,7 @@ add_library(vulkan-engine STATIC
     src/rendering/Pipeline.cpp
     src/rendering/PipelineManager.cpp
     src/rendering/RenderPass.cpp
+    src/rendering/PostProcess.cpp
     src/rendering/Renderer.cpp
     src/rendering/ShadowPass.cpp
     src/rendering/Vertex.cpp

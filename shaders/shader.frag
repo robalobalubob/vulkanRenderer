@@ -62,17 +62,9 @@ layout(location = 6) in vec4 fragLightSpacePos;
 
 layout(location = 0) out vec4 outColor;
 
-// ACES filmic tone mapping (Narkowicz fit). Maps HDR lighting to [0,1] with a
-// smooth highlight rolloff. Output stays linear: the sRGB swapchain applies
-// gamma encoding on write, so the shader must NOT gamma-correct manually.
-vec3 tonemapACES(vec3 x) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-}
+// This shader writes linear HDR radiance into a float target. Tone mapping
+// (ACES) happens later in composite.frag, and the sRGB swapchain applies gamma
+// encoding on write, so nothing here may tone-map or gamma-correct.
 
 float calculateShadow(vec4 lightSpacePos, vec3 normal, vec3 lightDir) {
     // debugView.y: 1.0 = shadows enabled
@@ -142,10 +134,10 @@ void main() {
 
     // Points, lines and curves have no surface normal to light, so the drawing
     // colour is the final colour: emissive * vertex colour (exactly one of the
-    // two is white). Tone mapping still applies, so an unlit white line matches
-    // a fully lit white surface instead of overshooting it.
+    // two is white). Tone mapping still applies in the composite pass, so an
+    // unlit white line matches a fully lit white surface instead of overshooting it.
     if ((material.flags.x & MATERIAL_FLAG_UNLIT) != 0u) {
-        outColor = vec4(tonemapACES(fragColor * material.emissiveAndCutoff.rgb), alpha);
+        outColor = vec4(fragColor * material.emissiveAndCutoff.rgb, alpha);
         return;
     }
 
@@ -176,7 +168,7 @@ void main() {
     }
 
     if (ubo.debugView.x > 0.5) {
-        // Unlit: raw linear color; swapchain sRGB encoding handles gamma
+        // Unlit: raw linear color (now tone-mapped by the composite pass like everything else)
         outColor = vec4(baseColor + emissive, alpha);
         return;
     }
@@ -268,5 +260,7 @@ void main() {
     // Add emissive (unaffected by lighting)
     lighting += emissive;
 
-    outColor = vec4(tonemapACES(lighting), alpha);
+    // Linear HDR radiance: values above 1.0 are kept for bloom. The composite
+    // pass (composite.frag) applies exposure and tone mapping.
+    outColor = vec4(lighting, alpha);
 }

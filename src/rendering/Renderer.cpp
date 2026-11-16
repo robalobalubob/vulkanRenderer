@@ -43,14 +43,20 @@ Renderer::Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapC
     // Create command pool for allocating command buffers
     m_commandPool = std::make_unique<CommandPool>(m_device.getDevice(), m_device.getGraphicsFamily());
 
-    m_renderPass = std::make_unique<RenderPass>(m_device.getDevice(), m_swapChain.imageFormat(), m_swapChain.depthFormat());
+    // The scene pass renders into PostProcess's HDR image and leaves it ready to
+    // sample; PostProcess then bloom-filters and tone-maps it into the swapchain.
+    m_postProcess = std::make_unique<PostProcess>(m_device.getDevice(), m_memoryManager,
+                                                  m_swapChain.imageFormat(), shaders.post);
+    m_renderPass = std::make_unique<RenderPass>(m_device.getDevice(), PostProcess::HDR_FORMAT,
+                                                m_swapChain.depthFormat(),
+                                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     // Initialize all rendering resources
     createPipelineResources(shaders);
     createFrameResources();
     createFallbackDescriptorSet();
     createShadowResources();
-    createFramebuffers();    // Framebuffers for each swap chain image
+    createFramebuffers();    // HDR scene framebuffer and post-process targets
     createCommandBuffers();  // Command buffers for multi-frame rendering
     createSyncObjects();     // Synchronization primitives for frame coordination
 
@@ -74,9 +80,8 @@ Renderer::Renderer(IWindow* window, VulkanDevice& device, VulkanSwapChain& swapC
  * Command pool cleanup is handled automatically by the unique_ptr.
  */
 Renderer::~Renderer() {
-    for (auto framebuffer : m_swapChainFramebuffers) {
-        vkDestroyFramebuffer(m_device.getDevice(), framebuffer, nullptr);
-    }
+    vkDestroyFramebuffer(m_device.getDevice(), m_sceneFramebuffer, nullptr);
+    m_postProcess.reset();
     for (auto& frame : m_frames) {
         vkDestroySemaphore(m_device.getDevice(), frame.imageAvailableSemaphore, nullptr);
         vkDestroyFence(m_device.getDevice(), frame.inFlightFence, nullptr);
@@ -358,18 +363,21 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
         recordShadowPass(commandBuffer, m_globalDescriptorSets[m_currentFrame]);
     }
 
-    // ---- Pass 2: Main render pass ----
+    // ---- Pass 2: Scene pass into the HDR target ----
     VkExtent2D extent = m_swapChain.extent();
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = m_renderPass->get();
-    renderPassInfo.framebuffer = m_swapChainFramebuffers[imageIndex];
+    renderPassInfo.framebuffer = m_sceneFramebuffer;
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = extent;
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{m_clearColor.r, m_clearColor.g, m_clearColor.b, 1.0f}};
+    // The background is tone-mapped with everything else, so clear to the HDR
+    // value that tone-maps back to the color the scene asked for.
+    const glm::vec3 hdrClear = PostProcess::inverseTonemap(m_clearColor, m_postProcess->getExposure());
+    clearValues[0].color = {{hdrClear.r, hdrClear.g, hdrClear.b, 1.0f}};
     clearValues[1].depthStencil = {1.0f, 0};
 
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -405,6 +413,10 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
     issueDrawCalls(commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
+
+    // ---- Passes 3+: bloom, then tone-map into the swapchain image ----
+    m_postProcess->record(commandBuffer, imageIndex);
+
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("failed to record command buffer!");
     }
@@ -765,27 +777,29 @@ void Renderer::collectLights(const SceneNode& root, std::vector<GpuLight>& outLi
 
 void Renderer::createFramebuffers() {
     VkExtent2D extent = m_swapChain.extent();
-    LOG_INFO(VULKAN, "Creating {} framebuffers at {}x{}", 
-              m_swapChain.imageViews().size(), extent.width, extent.height);
-    
-    m_swapChainFramebuffers.resize(m_swapChain.imageViews().size());
-    for (size_t i = 0; i < m_swapChain.imageViews().size(); i++) {
-        std::array<VkImageView, 2> attachments = {
-            m_swapChain.imageViews()[i],
-            m_swapChain.depthImageView()
-        };
+    LOG_INFO(VULKAN, "Creating scene framebuffer and post-process targets at {}x{}",
+             extent.width, extent.height);
 
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = m_renderPass->get();
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = extent.width;
-        framebufferInfo.height = extent.height;
-        framebufferInfo.layers = 1;
-        if (vkCreateFramebuffer(m_device.getDevice(), &framebufferInfo, nullptr, &m_swapChainFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
+    // Post-process owns the HDR image, so size it first.
+    m_postProcess->resize(extent, m_swapChain.imageViews());
+
+    // One scene framebuffer serves every swapchain image: the scene no longer
+    // renders into the swapchain directly, only the composite pass does.
+    std::array<VkImageView, 2> attachments = {
+        m_postProcess->getHdrImageView(),
+        m_swapChain.depthImageView()
+    };
+
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = m_renderPass->get();
+    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    framebufferInfo.pAttachments = attachments.data();
+    framebufferInfo.width = extent.width;
+    framebufferInfo.height = extent.height;
+    framebufferInfo.layers = 1;
+    if (vkCreateFramebuffer(m_device.getDevice(), &framebufferInfo, nullptr, &m_sceneFramebuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create scene framebuffer!");
     }
 }
 
@@ -850,9 +864,8 @@ void Renderer::recreateSwapChain(Camera& camera) {
 
     vkDeviceWaitIdle(m_device.getDevice());
 
-    for (auto framebuffer : m_swapChainFramebuffers) {
-        vkDestroyFramebuffer(m_device.getDevice(), framebuffer, nullptr);
-    }
+    vkDestroyFramebuffer(m_device.getDevice(), m_sceneFramebuffer, nullptr);
+    m_sceneFramebuffer = VK_NULL_HANDLE;
 
     m_swapChain.recreate(width, height);
 
@@ -869,7 +882,9 @@ void Renderer::recreateSwapChain(Camera& camera) {
     // The render pass references the swapchain formats and pipelines reference
     // the render pass. The on-disk PipelineCache survives invalidation.
     m_pipelineManager->invalidateAll();
-    m_renderPass = std::make_unique<RenderPass>(m_device.getDevice(), m_swapChain.imageFormat(), m_swapChain.depthFormat());
+    m_renderPass = std::make_unique<RenderPass>(m_device.getDevice(), PostProcess::HDR_FORMAT,
+                                                m_swapChain.depthFormat(),
+                                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     // Update camera aspect ratio using swapchain extent (source of truth)
     if (camera.getType() == CameraType::Perspective) {
@@ -879,7 +894,7 @@ void Renderer::recreateSwapChain(Camera& camera) {
         LOG_INFO(VULKAN, "Camera aspect ratio updated: {}", aspectRatio);
     }
 
-    // Re-create framebuffers
+    // Re-create the scene framebuffer and resize the post-process targets
     createFramebuffers();
 }
 

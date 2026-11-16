@@ -25,6 +25,7 @@
 #include "vulkan-engine/rendering/Camera.hpp"
 #include "vulkan-engine/rendering/DescriptorSet.hpp"
 #include "vulkan-engine/rendering/ShadowPass.hpp"
+#include "vulkan-engine/rendering/PostProcess.hpp"
 #include "vulkan-engine/rendering/Uniforms.hpp"
 #include "vulkan-engine/resources/Material.hpp"
 #include "vulkan-engine/core/MemoryManager.hpp"
@@ -73,6 +74,7 @@ namespace vkeng {
             std::filesystem::path fragment;
             std::filesystem::path shadowVertex;
             std::filesystem::path shadowFragment;
+            PostProcess::ShaderPaths post;  ///< Fullscreen HDR/bloom/composite passes
         };
 
         // ============================================================================
@@ -120,10 +122,22 @@ namespace vkeng {
         /** @brief Get the global ambient light color. */
         glm::vec3 getAmbientColor() const { return glm::vec3(m_ambientColor); }
 
-        /** @brief Set the background clear color (linear RGB; the sRGB swapchain encodes on write). */
+        /**
+         * @brief Set the background clear color (linear RGB, as it should appear on screen)
+         * @note The scene renders to an HDR target that is tone-mapped later, so the
+         * renderer clears with the inverse-tone-mapped value; the screen shows this color.
+         */
         void setClearColor(const glm::vec3& color) { m_clearColor = color; }
         /** @brief Get the background clear color. */
         const glm::vec3& getClearColor() const { return m_clearColor; }
+
+        /** @brief Exposure multiplier applied before tone mapping (1.0 = unchanged). */
+        void setExposure(float exposure) { m_postProcess->setExposure(exposure); }
+        float getExposure() const { return m_postProcess->getExposure(); }
+
+        /** @brief Bloom mix strength (0 disables bloom). */
+        void setBloomStrength(float strength) { m_postProcess->setBloomStrength(strength); }
+        float getBloomStrength() const { return m_postProcess->getBloomStrength(); }
 
         /** @brief Enable or disable frustum culling. */
         void setCullingEnabled(bool enabled) { m_cullingEnabled = enabled; }
@@ -319,7 +333,8 @@ namespace vkeng {
 
         /// Uploads m_frameMaterials into the given frame's storage buffer.
         void uploadMaterials(size_t frameIndex);
-        std::vector<VkFramebuffer> m_swapChainFramebuffers; ///< Framebuffers for each swap chain image
+        VkFramebuffer m_sceneFramebuffer = VK_NULL_HANDLE;  ///< HDR color + depth, target of the scene pass
+        std::unique_ptr<PostProcess> m_postProcess;          ///< HDR image, bloom and composite to the swapchain
         bool m_framebufferResized = false;                  ///< Flag indicating pending resize
         
         // ============================================================================

@@ -15,7 +15,8 @@ namespace vkeng {
      * @param device The logical device.
      * @param colorFormat The format of the color attachment (e.g., the swap chain's format).
      */
-    RenderPass::RenderPass(VkDevice device, VkFormat colorFormat, VkFormat depthFormat) 
+    RenderPass::RenderPass(VkDevice device, VkFormat colorFormat, VkFormat depthFormat,
+                           VkImageLayout colorFinalLayout)
         : device_(device) {
         
         // 1. Define the color attachment.
@@ -27,7 +28,7 @@ namespace vkeng {
         colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;      // We don't care about the previous layout.
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Transition to presentable layout at the end.
+        colorAttachment.finalLayout = colorFinalLayout; // Presentable, or sampleable by a later pass.
 
         VkAttachmentDescription depthAttachment{};
         depthAttachment.format = depthFormat;
@@ -58,14 +59,36 @@ namespace vkeng {
         // 4. Create a subpass dependency.
         // This ensures that the render pass waits for the image to be available before
         // writing to it.
-        VkSubpassDependency dependency{};
+        // When the color target is sampled later (the HDR scene image), it is also
+        // sampled by the previous frame's post-processing, so the incoming
+        // dependency must also wait for those fragment-shader reads to finish
+        // before this pass overwrites the image.
+        const bool sampledAfterwards = colorFinalLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        std::vector<VkSubpassDependency> dependencies(1);
+        VkSubpassDependency& dependency = dependencies[0];
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL; // Implicit subpass before the render pass
         dependency.dstSubpass = 0;                   // Our first (and only) subpass
         dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
                                 | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        if (sampledAfterwards) {
+            dependency.srcStageMask |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        }
         dependency.srcAccessMask = 0;
         dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        if (sampledAfterwards) {
+            // Outgoing: the color writes must land before a later pass samples them.
+            VkSubpassDependency out{};
+            out.srcSubpass = 0;
+            out.dstSubpass = VK_SUBPASS_EXTERNAL;
+            out.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            out.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            out.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            out.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            dependencies.push_back(out);
+        }
 
         // 5. Create the render pass.
         VkRenderPassCreateInfo renderPassInfo{};
@@ -75,8 +98,8 @@ namespace vkeng {
         renderPassInfo.pAttachments = attachments.data();
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
-        renderPassInfo.dependencyCount = 1;
-        renderPassInfo.pDependencies = &dependency;
+        renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+        renderPassInfo.pDependencies = dependencies.data();
 
         if (vkCreateRenderPass(device_, &renderPassInfo, nullptr, &renderPass_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create render pass!");
