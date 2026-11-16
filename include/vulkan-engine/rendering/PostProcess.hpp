@@ -197,7 +197,7 @@ private:
 
     // Settings
     float m_exposure = 1.0f;
-    float m_bloomStrength = 0.04f;
+    float m_bloomStrength = 0.15f;
     float m_bloomRadius = 0.005f;
 };
 

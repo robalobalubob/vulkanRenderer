@@ -12,6 +12,7 @@ layout(set = 0, binding = 1) uniform sampler2D bloomTex;
 layout(push_constant) uniform CompositeParams {
     float exposure;       // Multiplies the scene before tone mapping
     float bloomStrength;  // 0 = no bloom; mixes toward the blurred image
+    float bloomScale;     // 1 / bloom level count (see below)
 } params;
 
 layout(location = 0) in vec2 fragUV;
@@ -31,9 +32,13 @@ vec3 tonemapACES(vec3 x) {
 
 void main() {
     vec3 hdr = texture(sceneHdr, fragUV).rgb;
-    vec3 bloom = texture(bloomTex, fragUV).rgb;
-    // A lerp, not an add: the blurred image already holds the scene's energy,
-    // so mixing keeps total brightness roughly constant as strength changes.
+    // Each upsample step adds onto the level below, so bloom level 0 holds one
+    // blurred copy of the scene per level: a flat area of value v comes out
+    // as levelCount * v. Scaling by 1 / levelCount turns that sum into an
+    // average, so a flat area stays exactly v and only the halos remain.
+    vec3 bloom = texture(bloomTex, fragUV).rgb * params.bloomScale;
+    // A lerp, not an add: with the average above, mixing keeps total
+    // brightness constant as strength changes and only moves light into halos.
     vec3 color = mix(hdr, bloom, params.bloomStrength);
     outColor = vec4(tonemapACES(color * params.exposure), 1.0);
 }

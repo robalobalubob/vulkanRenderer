@@ -28,6 +28,7 @@ struct UpParams {
 struct CompositeParams {
     float exposure;
     float bloomStrength;
+    float bloomScale;
 };
 
 std::vector<char> readSpirv(const std::filesystem::path& path) {
@@ -490,7 +491,8 @@ void PostProcess::record(VkCommandBuffer cmd, uint32_t imageIndex) {
     const VkDescriptorSet set = bloom ? m_compositeSet : m_compositeNoBloomSet;
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_compositePipelineLayout,
                             0, 1, &set, 0, nullptr);
-    CompositeParams params{m_exposure, bloom ? m_bloomStrength : 0.0f};
+    CompositeParams params{m_exposure, bloom ? m_bloomStrength : 0.0f,
+                           1.0f / static_cast<float>(m_bloomLevels.size())};
     vkCmdPushConstants(cmd, m_compositePipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
     vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRenderPass(cmd);

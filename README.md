@@ -26,7 +26,7 @@ This project is a renderer, and its work goes into image quality and the renderi
 - **Shadow pass**: depth-only render pass with front-face culling, light-space matrix, shadow map sampler
 - **Shadow mapping**: 3x3 PCF sampling with slope-scaled bias, applied to the first directional light
 - **HDR rendering**: the scene renders into an `R16G16B16A16_SFLOAT` target, so light above 1.0 survives to post-processing
-- **Bloom**: progressive downsample (13-tap filter, Karis average on the first step) and tent-filter upsample chain, mixed into the scene at strength 0.04 (`Renderer::setBloomStrength`, 0 disables it)
+- **Bloom**: progressive downsample (13-tap filter, Karis average on the first step) and tent-filter upsample chain, averaged over its levels and mixed into the scene at strength 0.15 (`Renderer::setBloomStrength`, 0 disables it); flat areas keep their brightness and only the halos are added
 - **ACES tone mapping and exposure** in a fullscreen composite pass (`Renderer::setExposure`); gamma handled by the sRGB swapchain. The clear colour is inverse-tone-mapped, so backgrounds appear exactly as authored
 
 ### **Lighting**
@@ -381,7 +381,7 @@ visual change, set `VKENG_UPDATE_GOLDENS=1` while running `ctest` to replace the
 
 - **Lighting model**: Blinn-Phong adjusted by metallic and roughness, not a physically based BRDF.
 - **Model formats**: OBJ only; there is no glTF loader.
-- **Post-processing**: bloom and tone mapping only; no auto-exposure, and no screen-space effects (SSAO, SSR) yet.
+- **Post-processing**: bloom and tone mapping only; no auto-exposure, and no screen-space effects (SSAO, SSR) yet. Bloom has no mask, so a light background glows over the edges of dark objects in front of it, and the debug views (normals, unlit) also pass through bloom and ACES.
 - **Texture filtering and antialiasing**: no mipmaps, anisotropic filtering or MSAA.
 - **Shadow coverage**: the first directional light only, over a fixed 20-unit box around the world origin.
 - **Instanced rendering**: `CommandBuffer` accepts an instance count but always draws with 1.
