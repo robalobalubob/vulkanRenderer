@@ -25,7 +25,7 @@ build\Debug\test_scene.exe
 
 `ctest --test-dir build -C Debug --output-on-failure` (`ctest.exe` sits beside `cmake.exe`). Each test renders a scene through `rd_viewer` or `model_viewer`, compares it with `tests/golden/`, and fails on any validation message or error. Run it before and after rendering changes. Set `VKENG_UPDATE_GOLDENS=1` to replace the images after an intended visual change, and review them. The tests do not cover resizing or `test_scene` (its animation depends on frame timing), so after changing swapchain or lifecycle code, also resize, minimize and close each app and check its log for `Validation:`.
 
-## Status (verified 2026-11-16, Debug; Release last built 2026-10-31)
+## Status (verified 2026-11-16, Debug and Release)
 
 Build passing with no warnings on Windows (MSVC Debug and Release, default warning level); all three apps run with zero validation messages, including through resize, minimize and close.
 
