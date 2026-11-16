@@ -25,7 +25,9 @@ This project is a renderer, and its work goes into image quality and the renderi
 - **Disk-persistent pipeline cache**: `VkPipelineCache` loaded on startup, saved on shutdown
 - **Shadow pass**: depth-only render pass with front-face culling, light-space matrix, shadow map sampler
 - **Shadow mapping**: 3x3 PCF sampling with slope-scaled bias, applied to the first directional light
-- **ACES tone mapping**: filmic HDR rolloff in the fragment shader; gamma handled by the sRGB swapchain
+- **HDR rendering**: the scene renders into an `R16G16B16A16_SFLOAT` target, so light above 1.0 survives to post-processing
+- **Bloom**: progressive downsample (13-tap filter, Karis average on the first step) and tent-filter upsample chain, mixed into the scene at strength 0.04 (`Renderer::setBloomStrength`, 0 disables it)
+- **ACES tone mapping and exposure** in a fullscreen composite pass (`Renderer::setExposure`); gamma handled by the sRGB swapchain. The clear colour is inverse-tone-mapped, so backgrounds appear exactly as authored
 
 ### **Lighting**
 - **Blinn-Phong lighting** via a `Light` component attached to scene nodes
@@ -254,8 +256,9 @@ vulkanRenderer/
 
 ### Rendering Pipeline
 - **Renderer**: owned by `Engine` and available to apps as `renderer_`. Owns the render passes, pipeline manager, descriptors, uniform buffers and shadow map, and rebuilds what depends on the swapchain after a resize. An app only supplies a scene and a camera to `drawFrame()`
-- **Frame sequence**: acquires swapchain image, records shadow pass, records main pass, submits, presents
-- **RenderPass**: color + depth render pass with subpass dependencies
+- **Frame sequence**: acquires swapchain image, records shadow pass, scene pass (into the HDR target), bloom downsample and upsample passes, composite pass (into the swapchain image), submits, presents
+- **RenderPass**: color + depth render pass with subpass dependencies; the scene pass ends with its color image ready to be sampled
+- **PostProcess**: owns the HDR target, the bloom chain (half resolution down to a few pixels, up to 6 levels) and the composite pass, with its own fullscreen-triangle pipelines; resized with the swapchain
 - **ShadowPass**: depth-only render pass producing a shadow map sampled in the main pass
 - **PipelineManager**: creates and caches `Pipeline` variants keyed by `PipelineConfig`; owns the shared `VkPipelineLayout` and `PipelineCache`
 - **Pipeline**: wraps a `VkPipeline` -- configures all fixed-function state from a `PipelineConfig`
@@ -378,7 +381,7 @@ visual change, set `VKENG_UPDATE_GOLDENS=1` while running `ctest` to replace the
 
 - **Lighting model**: Blinn-Phong adjusted by metallic and roughness, not a physically based BRDF.
 - **Model formats**: OBJ only; there is no glTF loader.
-- **Post-processing**: single render pass only -- no bloom or HDR resolve (tone mapping is done in-shader).
+- **Post-processing**: bloom and tone mapping only; no auto-exposure, and no screen-space effects (SSAO, SSR) yet.
 - **Texture filtering and antialiasing**: no mipmaps, anisotropic filtering or MSAA.
 - **Shadow coverage**: the first directional light only, over a fixed 20-unit box around the world origin.
 - **Instanced rendering**: `CommandBuffer` accepts an instance count but always draws with 1.
