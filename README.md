@@ -386,6 +386,13 @@ visual change, set `VKENG_UPDATE_GOLDENS=1` while running `ctest` to replace the
 - **RD texture mapping**: the `Map*` command family is parsed but not applied; `"painted plastic"` falls back to `plastic`.
 - **RD subdivision surfaces**: `Subdivision` renders its control cage rather than the Catmull-Clark limit surface.
 
+## Planned Work: Educational Projects
+
+These are **educational** projects: learning exercises to keep skills sharp, kept apart from the renderer's main roadmap.
+
+- **Educational: progressive path tracer in Vulkan**, with a BVH acceleration structure and importance sampling.
+- **Educational: Gaussian splatting viewer in Vulkan**, rendered in real time. The splats are trained from camera poses produced by a separate structure-from-motion pipeline.
+
 ## Troubleshooting
 
 - Check console output for `[ERROR]` and `[WARN]` log lines.

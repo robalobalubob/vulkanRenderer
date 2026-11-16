@@ -29,7 +29,7 @@ build\Debug\test_scene.exe
 
 Build passing with no warnings on Windows (MSVC Debug and Release, default warning level); all three apps run with zero validation messages, including through resize, minimize and close.
 
-Added 2026-10-31 (uncommitted): **rendering setup moved out of the apps.** `Renderer` now owns the render pass, pipeline manager, descriptors, uniform buffers and shadow pass, and rebuilds them itself on resize; `Engine` owns the `Renderer` and handles `requestCapture()`, so every app can capture. Path resolution moved to `core/RuntimePaths`. `HelloTriangleApp` was renamed `TestSceneApp`. Renders were byte-identical before and after.
+Added 2026-10-31 (committed in cd969f1): **rendering setup moved out of the apps.** `Renderer` now owns the render pass, pipeline manager, descriptors, uniform buffers and shadow pass, and rebuilds them itself on resize; `Engine` owns the `Renderer` and handles `requestCapture()`, so every app can capture. Path resolution moved to `core/RuntimePaths`. `HelloTriangleApp` was renamed `TestSceneApp`. Renders were byte-identical before and after.
 
 Added 2026-07-26 (committed in 607f22d): **RD support completed to full geometry-spec coverage.**
 - **Pipeline topology/polygon mode**: `PipelineConfig` gained `topology` (TriangleList/LineList/LineStrip/
@@ -49,7 +49,7 @@ Added 2026-07-26 (committed in 607f22d): **RD support completed to full geometry
   command the generators don't emit), `neutron_static.rd`, `neutron_dynamic.rd` (40 frames) — the latter two
   generated from the portfolio generators via WSL g++.
 
-Added 2026-07-26 (uncommitted): **material data moved out of push constants**, after auditing whether RD
+Added 2026-07-26 (committed in 2096696): **material data moved out of push constants**, after auditing whether RD
 support had dragged in RD-era simplifications. The audit found RD's *semantics* stayed properly inside
 `RdSceneLoader`; these were the leaks, all now fixed:
 - **Material data now lives in a per-frame storage buffer** (set 0, binding 1), indexed by a material index
@@ -78,7 +78,7 @@ right-hand normal points *toward* the viewer. `glm::perspective`'s handedness fl
 answer backwards. Verified by rendering shapes single-sided and looking. `PrimitiveFactory`'s
 `emitGridIndices` encodes this for all swept surfaces.
 
-Added 2026-07-20 (uncommitted): **RD scene support** — the graphics milestone enabling the portfolio
+Added 2026-07-20 (committed since): **RD scene support** — the graphics milestone enabling the portfolio
 scenes from `C:\Users\liber\projects\portfolio\rd_view` to be re-rendered in this engine:
 - `RdSceneLoader` (`src/scene/RdSceneLoader.cpp`): parses `.rd` files into scene graphs. See the header
   for the lighting-model mapping (RD Ka/Kd/Ks/Specular → material slots; ambient via renderer global
@@ -129,5 +129,16 @@ render regression tests, rendering setup moved out of the apps.
 5. MSAA
 6. Later, if wanted: skybox, RD texture mapping (`Map*` family + PPM loader), Catmull-Clark subdivision,
    instancing wiring, hierarchical culling
+
+### Educational projects (added 2026-11-10)
+
+These are **educational**: learning projects that keep the user's skills sharp, not features the
+renderer needs. They are listed apart from the numbered roadmap and are not ranked against it.
+Since learning is the point, explain the approach and the reasoning as the work goes, not just the result.
+
+- **Educational: progressive path tracer in Vulkan**, with a BVH acceleration structure and importance
+  sampling.
+- **Educational: Gaussian splatting viewer in Vulkan**, rendered in real time. The splats are trained from
+  camera poses produced by the user's structure-from-motion pipeline (`C:\Users\liber\projects\3D_reconstruction`).
 
 Fixed 2026-07-19: the washed-out look was double gamma — `shader.frag` applied `pow(1/2.2)` on top of the sRGB swapchain's hardware encoding. Removed manual gamma, added ACES tone mapping, dropped test-scene material specular 0.35→0.06. Before/after: `docs/screenshots/blown_out_look.png` vs `tonemapped_look.png`. Note: the color pipeline convention is now "shader outputs linear; swapchain encodes" — any future shader must not gamma-correct manually.

@@ -165,3 +165,6 @@ compile_flags.txt
 assets/*
 !assets/rd/
 !assets/cube.obj
+
+# Personal study material (Vulkan lecture series), not part of the renderer
+lessons/
