@@ -78,7 +78,13 @@ Verified byte-identical renders before/after the refactor (`md5sum` on captured 
 right-hand normal points *toward* the viewer. `glm::perspective`'s handedness flip and the
 `m_projectionMatrix[1][1] *= -1` at `Camera.cpp:134` cancel out; reasoning about either one alone gets the
 answer backwards. Verified by rendering shapes single-sided and looking. `PrimitiveFactory`'s
-`emitGridIndices` encodes this for all swept surfaces.
+`emitGridIndices` encodes this for all swept surfaces. **Fixed 2026-11-16:** the sphere and torus
+generators (`createUvSphere`, `createSuperquadricSphere`, `createTorus`, `createSuperquadricTorus`) had their
+own index loops in the opposite order, so every solid sphere and torus was inside-out: back-face culling
+removed the half facing the camera and the far half's inner surface showed, lit from the wrong side. It went
+unnoticed because the silhouette is identical. Quick check for any closed shape: put a small opaque cube
+inside it; if the cube shows, the winding is reversed. Another: light the scene from behind; correctly wound
+shapes go dark facing the camera.
 
 Added 2026-07-20 (committed since): **RD scene support** — the graphics milestone enabling the portfolio
 scenes from `C:\Users\liber\projects\portfolio\rd_view` to be re-rendered in this engine:

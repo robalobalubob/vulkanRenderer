@@ -376,13 +376,16 @@ std::shared_ptr<Mesh> PrimitiveFactory::createTorus(std::shared_ptr<MemoryManage
             const uint32_t curr = i * stride + j;
             const uint32_t next = (i + 1) * stride + j;
 
+            // Outward-facing front faces (see emitGridIndices for how this
+            // order was verified): reversing either triangle turns the
+            // torus inside-out under CullMode::Back.
             indices.push_back(curr);
-            indices.push_back(next);
             indices.push_back(curr + 1);
+            indices.push_back(next);
 
             indices.push_back(curr + 1);
-            indices.push_back(next);
             indices.push_back(next + 1);
+            indices.push_back(next);
         }
     }
 
@@ -437,14 +440,14 @@ std::shared_ptr<Mesh> PrimitiveFactory::createUvSphere(std::shared_ptr<MemoryMan
 
             if (lat > 0) {
                 indices.push_back(topLeft);
-                indices.push_back(bottomLeft);
                 indices.push_back(topRight);
+                indices.push_back(bottomLeft);
             }
 
             if (lat + 1 < latitudeSegments) {
                 indices.push_back(topRight);
-                indices.push_back(bottomLeft);
                 indices.push_back(bottomRight);
+                indices.push_back(bottomLeft);
             }
         }
     }
@@ -504,7 +507,9 @@ std::shared_ptr<Mesh> PrimitiveFactory::createSuperquadricSphere(std::shared_ptr
     vertices.reserve(static_cast<size_t>(latitudeSegments + 1) * (longitudeSegments + 1));
 
     // Rows sweep latitude from the north (+Z) end down; columns sweep longitude
-    // clockwise around +Z (y = -sin) so winding matches the engine's UV sphere.
+    // clockwise around +Z (y = -sin): the same grid layout as emitGridIndices,
+    // so the triangles below use its order. (Until 2026-11-16 they copied the
+    // UV sphere's order, which made both spheres inside-out.)
     for (uint32_t lat = 0; lat <= latitudeSegments; ++lat) {
         const float v = static_cast<float>(lat) / static_cast<float>(latitudeSegments);
         const float phi = phiMax - v * (phiMax - phiMin);
@@ -551,13 +556,13 @@ std::shared_ptr<Mesh> PrimitiveFactory::createSuperquadricSphere(std::shared_ptr
 
             if (!topIsPole) {
                 indices.push_back(topLeft);
-                indices.push_back(bottomLeft);
                 indices.push_back(topRight);
+                indices.push_back(bottomLeft);
             }
             if (!bottomIsPole) {
                 indices.push_back(topRight);
-                indices.push_back(bottomLeft);
                 indices.push_back(bottomRight);
+                indices.push_back(bottomLeft);
             }
         }
     }
@@ -623,13 +628,16 @@ std::shared_ptr<Mesh> PrimitiveFactory::createSuperquadricTorus(std::shared_ptr<
             const uint32_t curr = i * stride + j;
             const uint32_t next = (i + 1) * stride + j;
 
+            // Outward-facing front faces (see emitGridIndices for how this
+            // order was verified): reversing either triangle turns the
+            // torus inside-out under CullMode::Back.
             indices.push_back(curr);
-            indices.push_back(next);
             indices.push_back(curr + 1);
+            indices.push_back(next);
 
             indices.push_back(curr + 1);
-            indices.push_back(next);
             indices.push_back(next + 1);
+            indices.push_back(next);
         }
     }
 
